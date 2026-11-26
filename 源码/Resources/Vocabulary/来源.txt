@@ -1,0 +1,58 @@
+内置词库
+
+地名取自民政部《2024年中华人民共和国县以上行政区划代码》，按写法去重；地名用于听写，不作为现行行政区划查询。仅收录名称，另附部分省市简称。
+https://www.mca.gov.cn/mzsj/xzqh/2025/202401xzqh.html
+
+就业、教育、航天和技术词语由本应用选编。词条写法参考以下公开资料，未收录网页正文；读音提示、常见误听和适用语境由本应用编写。
+教育部：基层就业项目（“三支一扶”、特岗计划、西部计划）
+https://www.moe.gov.cn/jyb_xwfb/gzdt_gzdt/s5987/202306/W020230609625069146258.pdf
+人力资源社会保障部：金秋招聘月
+https://chinajob.mohrss.gov.cn/h5/c/2025-03-19/427942.shtml
+中国载人航天工程办公室：中国空间站系统
+https://www.cmse.gov.cn/xwzx/202301/t20230104_52083.html
+IETF 与 RFC Editor：技术缩写；W3C：技术标准；Apple Developer：框架与平台名称
+https://www.rfc-editor.org/rpc/wiki/doku.php?id=abbrev_list
+https://www.w3.org/TR/
+https://developer.apple.com/documentation/technologies
+
+地标、机构和专业词条仅选编名称；下列官方名录、课程及工具文档用于核对写法。词语搭配与容易听错的写法均为本应用编写，随包离线使用。
+联合国教科文组织：中国世界遗产名录
+https://whc.unesco.org/en/statesparties/cn/
+北京大学中文系：古代汉语教研室
+https://chinese.pku.edu.cn/szdw/zzjs/gdhyjys/index.htm
+Visual Studio Code：MCP servers；Rust：The Rust Programming Language
+https://code.visualstudio.com/docs/agent-customization/mcp-servers
+https://doc.rust-lang.org/book/
+ORCID：持久标识符及相关机构
+https://support.orcid.org/hc/en-us/articles/360006971013-What-are-persistent-identifiers-PIDs
+
+工程与行业词汇由编辑选编；规范术语参考：全国科学技术名词审定委员会「术语在线」 https://www.termonline.cn/ 。按小主题编写的听写搭配不作为术语释义。
+
+自然科学、日常消费与出行词由编辑按主题选编。中英文品牌别称供检索，保留口述语言；品牌名称不代表合作或推荐。以下资料用于核对部分写法，未摘录产品介绍或术语释义。
+全国科学技术名词审定委员会：《天文学名词》（第三版） https://www.cnterm.cn/cb/sdgb/202409/t20240926_762086.html
+霸王茶姬：原叶鲜奶茶 https://chagee.com.sg/zh-sg/product/fresh-milk-tea-series
+欧莱雅：国际品牌 https://www.loreal-finance.com.cn/zh/annual-report-2023/global-brands/
+比亚迪：汽车品牌 https://www.byd.com/cn
+雅迪：电动两轮车 https://www.yadea.com.cn/
+
+山川地标、传统工艺和大众运动只收名称，用于本地分类与搜索。部分名称核对自：
+敦煌研究院：莫高窟第17窟（敦煌藏经洞） https://www.dha.ac.cn/info/1425/3608.htm
+故宫博物院：陶瓷藏品与窑口名称 https://www.dpm.org.cn/collection/ceramic/227909.html
+国家体育总局小球运动管理中心：匹克球 https://www.sport.gov.cn/xqzx/n5354/c27801137/content.html
+
+日常用品、自然观察和人文学科按用途区分检索主题；同一写法可以检索到不同对象，不作为彼此的听写替换。部分名称参考：
+北京大学哲学系：教研室与学科方向 https://phil.pku.edu.cn/szdw/szll/index.htm
+罗意威：Puzzle 手袋系列 https://www.loewe.com/int/zh_CN/women/bags/puzzle
+比亚迪：海洋网车型 https://www.byd.com/cn/ocean-home
+
+古典语料：唐诗三百首、千家诗、宋词三百首、古文观止选篇、论语及诗经、楚辞选段使用 chinese-poetry/chinese-poetry 的古籍正文。按篇名、作者、分句和相邻顺序整理为简体字形；不收现代注释和译文。另收常诵公版篇目和通行异文。版本 b8594f81a89752241442f2ce267d6f66f96704ee，MIT，见 Licenses/Chinese-Poetry.txt。
+https://github.com/chinese-poetry/chinese-poetry/tree/b8594f81a89752241442f2ce267d6f66f96704ee
+常用成语与传统歇后语为选编词面。成语词形、部分歇后语参照 pwxcoo/chinese-xinhua；不含现代例句、释义。版本 fe6d6c2e8baa82187f4c96bbe042e43f96c05666，MIT，见 Licenses/Chinese-Xinhua.txt。
+https://github.com/pwxcoo/chinese-xinhua/tree/fe6d6c2e8baa82187f4c96bbe042e43f96c05666
+字音表来自 macOS 的汉字普通话转写，古读、多音字按具体原句另行处理。
+
+曹操《短歌行》按香港教育局《中学古诗文诵读材料选编》与《乐府诗集》所收正文核对，保留“掇／辍”等有据异文。
+https://www.edb.gov.hk/attachment/tc/curriculum-development/kla/chi-edu/resources/secondary-edu/lang/chi_chapter/P008.pdf
+https://zh.wikisource.org/wiki/短歌行_(曹操)
+文天祥《指南录后序》按原文选录“穷饿无聊”至“号呼靡及”四句，与王勃《滕王阁序》的同句分别核对。
+https://www.gushiwen.cn/shiwenv_25d7a57051de.aspx

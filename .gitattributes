@@ -1,0 +1,7 @@
+appcast.xml -text
+*.png binary
+*.icns binary
+*.bsdiff binary
+# Empty last TSV columns and verbatim upstream license text are intentional.
+*.tsv whitespace=-blank-at-eol
+**/Licenses/*.txt whitespace=-blank-at-eol

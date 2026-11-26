@@ -1,0 +1,18 @@
+语音识别模型
+
+X-ASR-zh-en · Gilgamesh-J/X-ASR（Apache-2.0）。内置中英双语、带标点的 960 毫秒量化模型。同系列 480 毫秒和 1.92 秒量化版以编码器差分随应用提供，启用时在本机还原并校验官方发布文件。960 毫秒全精度版可选下载。模型由 sherpa-onnx 转为本机使用的格式，未重新训练。
+原项目：https://github.com/Gilgamesh-J/X-ASR
+许可：X-ASR.txt
+
+普通话 Zipformer XL · yuekai/icefall-asr-multi-zh-hans-zipformer-xl。采用 sherpa-onnx 发布的 2025-06-30 流式量化版。权重不随应用分发，仅在用户选择安装时从该项目的公开发布包下载。
+模型说明：https://huggingface.co/yuekai/icefall-asr-multi-zh-hans-zipformer-xl
+训练项目：https://github.com/k2-fsa/icefall/tree/master/egs/multi_zh-hans/ASR
+模型发布：https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
+
+本机运行组件
+
+sherpa-onnx · k2-fsa/sherpa-onnx（Apache-2.0）。通过 C 接口调用识别引擎。许可：sherpa-onnx.txt。
+ONNX Runtime · Microsoft Corporation（MIT）。许可与第三方声明：ONNX-Runtime.txt、ONNX-Runtime-Notices.txt。
+
+Sparkle · sparkle-project/Sparkle 2.10.1（MIT 等）。用于检查、验证并安装用户选择的更新。许可和随附声明见 Sparkle.txt。
+https://github.com/sparkle-project/Sparkle/releases/tag/2.10.1
