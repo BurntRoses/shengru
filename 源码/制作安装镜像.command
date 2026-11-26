@@ -3,7 +3,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; mode=release
 case "${1:-}" in --preview) mode=preview;shift;; --local) mode=local;shift;; --release) shift;; esac
-app="${1:-$here/../语音输入.app}"; name='语音输入.dmg'; [ "$mode" != local ] || name='语音输入（本机版）.dmg'; [ "$mode" != preview ] || name="Shengru.dmg"; out="${2:-$here/../$name}"
+app="${1:-$here/../语音输入.app}"; name='Shengru.dmg'; [ "$mode" != local ] || name='语音输入（本机版）.dmg'; out="${2:-$here/../$name}"
 if [ "$mode" = release ]; then
   [ -n "${DEVELOPER_ID:-}" ] && [ -n "${NOTARY_PROFILE:-}" ] || { echo '公开分发需要 Developer ID Application 和钥匙串公证配置。本机自用请显式传入 --local。' >&2; exit 1; }
 fi
