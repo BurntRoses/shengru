@@ -284,6 +284,8 @@ final class LiveComposition {
         }
       }
     }
+    // Pending preferences are suggestions, never inputs to an acoustic vote.
+    for c in Transcript.personalChoices(in:final,index:index) where choices.count < 8 && !choices.contains(c) { choices.append(c) }
     return (
       original, final,
       choices.filter { !shield.discourages($0.word) }

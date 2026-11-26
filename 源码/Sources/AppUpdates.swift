@@ -86,7 +86,7 @@ struct UpdatePane: View {
   var body:some View {
     Surface(inset:Layout.inset,spacing:13) {
       HStack(spacing:12) {
-        Image(nsImage:NSApp.applicationIconImage).resizable().frame(width:48,height:48).accessibilityHidden(true)
+        BrandBadge(size: 48)
         VStack(alignment:.leading,spacing:4) { PanelTitle(title:"语音输入");Text("版本 \(version)").font(.callout).foregroundStyle(.secondary) }
         Spacer()
         switch updates.stage {

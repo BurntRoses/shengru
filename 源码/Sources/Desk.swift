@@ -395,8 +395,6 @@ final class Desk: ObservableObject {
       options.keepText && options.linkContext
       ? conversation.next(for: destination, rows: rows) : nil
     let previous = ConversationWindow.recent(runConversation, rows: rows)
-    let personalHints = frequencies.hints(previous: previous) { self.admitsFrequent($0) }
-    let hints = ConversationWindow.hints(previous: previous, terms: runTerms) + personalHints
     let learned = options.learning ? memories : []
     stable = ""
     tail = ""
@@ -413,7 +411,7 @@ final class Desk: ObservableObject {
     let saved =
       runOptions.keepAudio ? lib.spool.appendingPathComponent(id.uuidString + ".clips") : nil
     audio.begin(
-      id, url: saved, hints: hints, level: runOptions.level, terms: runTerms, policy: policy,
+      id, url: saved, level: runOptions.level, terms: runTerms, policy: policy,
       learned: learned, previous: previous, compact:runOptions.compactQuiet, recover:!runOptions.reviewFirst, proof:runOptions.proofWords
     ) { [weak self] e in
       guard let s = self, s.session == id else { return }
@@ -549,7 +547,9 @@ final class Desk: ObservableObject {
         text, audio: entry.heard.audio, seconds: entry.heard.seconds, options: keep, id: entry.id,
         conversation: group, incompleteAudio: entry.heard.audioError, choices: readingChoices)
       rows = lib.records
-      if keep.keepText && entry.options.collectFrequent { collect(text, id: entry.id) }
+      if keep.keepText && entry.options.collectFrequent {
+        collect(text,id:entry.id,heard:entry.heard.raw,editedFrom:awaitingReview ? learningBase : nil)
+      }
       if let group {
         conversation.accept(group, destination: entry.destination)
       } else {
@@ -636,7 +636,7 @@ final class Desk: ObservableObject {
     if let entry=heldReview {
       let to=canSendReviewed ? entry.target : nil
       guard store(entry,text:text) else {return}
-      rememberChange(learningBase,text); heldReview=nil; awaitingReview=false; editing=false;panelEditing=false
+      rememberChange(learningBase,text,record:id); heldReview=nil; awaitingReview=false; editing=false;panelEditing=false
       readingChoices=readingChoices.filter{$0.applying(to:text) != nil};readingEdit=nil;draft=text;last=text;stable=text;tail="";showEdits=false
       onChange?()
       if let to { confirming=true; to.insertReviewed(text) { [weak self] out in self?.confirming=false;self?.presentResult(out,id:UUID()) } }
@@ -646,7 +646,7 @@ final class Desk: ObservableObject {
       // insertion receipt may replace text; changing an older history entry never writes outside the app.
       if wasPanel {panelEditing=false;onChange?()}
       if before != text, !setReading(text,id:id,inDraft:false,pool:readingChoices,from:.dictate,manual:true) {panelEditing=wasPanel;onChange?();return}
-      rememberChange(learningBase,text); editing=false;panelEditing=false;readingEdit=nil;draft=text
+      rememberChange(learningBase,text,record:id); editing=false;panelEditing=false;readingEdit=nil;draft=text
       if before == text {status="定稿未改动"}; onChange?();if phase == .result && !confirming {hide(in:resultDwell)}
     }
   }
@@ -660,17 +660,18 @@ final class Desk: ObservableObject {
     let text=h.text.trimmed
     guard !text.isEmpty, let row=rows.first(where:{$0.id==h.id}),row.text == h.original else {message="原记录已变化或正文为空，请核对后保存。";return false}
     if text != h.original {
-      guard setReading(text,id:h.id,inDraft:false,pool:row.choices ?? [],from:.history) else {return false}
-      rememberChange(h.original,text)
+      guard setReading(text,id:h.id,inDraft:false,pool:row.choices ?? [],from:.history,manual:true) else {return false}
+      rememberChange(h.original,text,record:h.id)
     }
     historyDraft=nil;return true
   }
-  private func rememberChange(_ before:String,_ after:String) {
+  private func rememberChange(_ before:String,_ after:String,record:UUID) {
     guard options.learning,before != after else {return}
     let pairs=PersonalCorrection.candidates(from:before,to:after).filter { pair in
       PersonalCorrection.learnable(pair) && !terms.contains { $0.spoken.caseInsensitiveCompare(pair.spoken) == .orderedSame || $0.spelling.caseInsensitiveCompare(pair.spoken) == .orderedSame }
     }
-    if !pairs.isEmpty {saveMemories(PersonalCorrection.merging(pairs,into:memories))}
+    let next=PersonalCorrection.merging(pairs,into:memories,record:record,before:before,after:after)
+    if next != memories {saveMemories(next)}
   }
   private func clearReplayNotice(_ id:UUID, capsuleMessage:String? = nil) {
     guard let r=rehearing,r.recordID==id,r.stage != .working else {return}
@@ -715,10 +716,10 @@ final class Desk: ObservableObject {
       if awaitingReview { stable = text }
       readingChoices = pool.filter { $0.applying(to:text) != nil }
     } else {
-      if rows.contains(where: { $0.id == id && $0.text != nil }) {
+      if let prior = rows.first(where: { $0.id == id })?.text {
         do { try lib.revise(id, text: text, choices: pool); rows = lib.records }
         catch { message = "历史文字未能保存，定稿未变。"; return false }
-        if options.collectFrequent { collect(text, id: id) }
+        if options.collectFrequent { collect(text,id:id,editedFrom:manual ? prior : nil) }
       }
       guard id == lastID else { return true }
       let receipt=delivered,original=last
@@ -823,15 +824,23 @@ final class Desk: ObservableObject {
     guard !policy.hidden.contains(k), !blockedWordKeys.contains(k), !manualWordKeys.contains(k) else { return false }
     return WordCatalog.shared.byName[k].map { policy.uses($0) } ?? true
   }
-  private func collect(_ text: String, id: UUID) {
+  private func collect(_ text: String, id: UUID, heard: String? = nil, editedFrom: String? = nil) {
     guard options.collectFrequent, options.keepText else { return }
     let epoch = wordEpoch
     wordWorker.async { [weak self] in
       let names = WordCapture.candidates(in: text, vocabulary: .shared)
+      // A spelling introduced by our own proofreader is not evidence of the user's habits.
+      // On revision retain supported words still present and add only what the user changed.
+      func keys(_ value:String)->Set<String> {
+        Set((value == text ? names : WordCapture.candidates(in:value,vocabulary:.shared)).map { $0.lowercased() })
+      }
+      var supported = heard.map(keys) ?? []
+      if let before=editedFrom, before != text { supported.formUnion(keys(text).subtracting(keys(before))) }
+      let evidence = supported
       DispatchQueue.main.async {
         guard let self, self.wordEpoch == epoch, self.options.collectFrequent, self.options.keepText else { return }
         let filtered = names.filter { self.admitsFrequent($0) }
-        _ = self.changeFrequencies { $0.observe(filtered, id: id) }
+        _ = self.changeFrequencies { $0.observe(filtered, id: id, supported:evidence) }
       }
     }
   }
@@ -957,7 +966,9 @@ extension Desk {
     let group=entry?.conversation ?? row?.conversation
     let older=row.flatMap{r in rows.firstIndex{$0.id==r.id}}.map{Array(rows.dropFirst($0+1).prefix(8))} ?? Array(rows.prefix(8))
     let context=options.keepText && options.linkContext ? ConversationWindow.recent(group,rows:older) : []
-    let active=terms.filter(policy.uses), hints=ConversationWindow.hints(previous:context,terms:active)+frequencies.hints(previous:context){self.admitsFrequent($0)}
+    let active=terms.filter(policy.uses)
+    let familiar=options.collectFrequent ? frequencies.hints(previous:context){self.admitsFrequent($0)} : []
+    let hints=ConversationWindow.hints(previous:context,terms:active)+familiar
     let request=ReplayRequest(url:url,expectedSections:row?.sectionCount,model:model,directory:models.url(model),
       level:entry?.options.level ?? row?.mode ?? runOptions.level,terms:active,learned:options.learning ? memories : [],previous:context,hints:hints,
       policy:policy,proof:options.proofWords,alternateDirectory:model == .bundled ? nil : models.url(.bundled))

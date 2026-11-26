@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PanelStudio: View {
@@ -21,7 +22,7 @@ struct PanelStudio: View {
         PanelTitle(title:"实时预览"); Spacer()
         Button { d.previewing.toggle() } label: { Label(d.previewing ? "收起屏幕预览" : "在屏幕上预览", systemImage:d.previewing ? "rectangle.inset.filled" : "macwindow") }
           .deskAction().disabled(d.phase != .idle && !d.previewing)
-      }.padding(.horizontal,14).padding(.top,8)
+      }.padding(.horizontal,Layout.inset).padding(.top,8)
       GeometryReader { g in
         // A fixed scale for the available viewport keeps all width changes visible, even in a narrow window.
         let scale = min(1,max(1,g.size.width-32)/640)
@@ -34,7 +35,7 @@ struct PanelStudio: View {
   }
   private var controls: some View {
     VStack(alignment:.leading,spacing:10) {
-      Surface(inset:16,spacing:8) {
+      Surface(inset:Layout.inset,spacing:8) {
         HStack { PanelTitle(title:"配色"); Spacer(); Button("恢复默认") { d.restorePanel() }.deskAction().disabled(look == CapsuleAppearance() && !d.panelMoved).help("恢复悬浮窗的配色、位置、尺寸和动效") }
         HStack(spacing:4) {
           ForEach(CapsulePalette.allCases,id:\.self) { p in
@@ -67,7 +68,7 @@ struct PanelStudio: View {
   }
   private var materials: [MaterialChoice] { if #available(macOS 26,*) { return MaterialChoice.allCases }; return [.frost,.solid] }
   private func fold<Content:View>(_ title:String,symbol:String,summary:String,isOpen:Binding<Bool>,@ViewBuilder content:@escaping ()->Content) -> some View {
-    Surface(inset:14,spacing:0) {
+    Surface(inset:Layout.inset,spacing:0) {
       Button { isOpen.wrappedValue.toggle() } label:{
         HStack(spacing:9) { Image(systemName:symbol).foregroundStyle(Color.inkMint).frame(width:20); PanelTitle(title:title); Spacer(); Text(summary).font(.callout).foregroundStyle(.secondary); Image(systemName:isOpen.wrappedValue ? "chevron.up":"chevron.down").font(.caption.weight(.semibold)).frame(width:14) }
           .frame(minHeight:24).contentShape(Rectangle())
@@ -76,14 +77,25 @@ struct PanelStudio: View {
     }
   }
   private func segment<T:Hashable>(_ title:String,_ v:Binding<T>,_ items:[T],_ name:@escaping (T)->String) -> some View {
-    HStack { Text(title); Spacer(); Picker(title,selection:v) { ForEach(items,id:\.self) { Text(name($0)).tag($0) } }.labelsHidden().pickerStyle(.segmented).frame(maxWidth:244).keyCue(9,segment:(items.firstIndex(of:v.wrappedValue) ?? 0,items.count)) }.frame(minHeight:29)
+    let selection = Binding(get: { items.firstIndex(of:v.wrappedValue) ?? 0 }, set: { if items.indices.contains($0) { v.wrappedValue = items[$0] } })
+    return row(title) {
+      UniformSegments(title:title, names:items.map(name), selection:selection)
+        .keyCue(9,segment:(selection.wrappedValue,items.count))
+    }
+  }
+  private func row<Control:View>(_ title:String,@ViewBuilder control:()->Control) -> some View {
+    HStack(spacing:12) {
+      Text(title).frame(minWidth:Layout.formLabel,alignment:.leading)
+      Spacer(minLength:0)
+      HStack(spacing:8,content:control).frame(maxWidth:Layout.controlRail)
+    }.frame(minHeight:Layout.optionRow)
   }
   private func toggle(_ title:String,_ v:Binding<Bool>) -> some View {
-    Toggle(isOn:v) { Text(title).frame(maxWidth:.infinity,alignment:.leading) }.toggleStyle(.switch).keyCue().frame(minHeight:30)
+    Toggle(isOn:v) { Text(title).frame(maxWidth:.infinity,alignment:.leading) }.toggleStyle(.switch).keyCue().frame(minHeight:Layout.optionRow)
   }
   private func slider(_ name:String,_ v:Binding<Double>,_ r:ClosedRange<Double>,_ step:Double,_ unit:String) -> some View {
     let n=v.wrappedValue, display=unit == "%" ? "\(Int((n*100).rounded()))%" : n.formatted(.number.precision(.fractionLength(0...2))) + " " + unit
-    return HStack(spacing:12) { Text(name).frame(width:64,alignment:.leading); Slider(value:v,in:r,step:step).labelsHidden().keyCue().accessibilityLabel(name).accessibilityValue(display); Text(display).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width:57,alignment:.trailing) }.frame(minHeight:29)
+    return row(name) { Slider(value:Binding(get:{ v.wrappedValue },set:{ v.wrappedValue = min(r.upperBound,max(r.lowerBound,r.lowerBound + (($0-r.lowerBound)/step).rounded()*step)) }),in:r).labelsHidden().keyCue().accessibilityLabel(name).accessibilityValue(display); Text(display).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width:57,alignment:.trailing) }
   }
 }
 

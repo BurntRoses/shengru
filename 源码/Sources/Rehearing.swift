@@ -52,7 +52,7 @@ struct ReplayRequest {
     var decoder=try Recognizer(directory,profile:model,deepSearch:true)
     var vocab=SessionVocabulary()
     func whole(_ r:Recognizer) throws -> (raw:String,final:String,choices:[ReadingChoice]) {
-      let stream=try vocab.open(r,hints:hints,level:level,terms:terms,policy:policy,learned:learned,previous:previous,proof:proof)
+      let stream=try vocab.open(r,level:level,terms:terms,policy:policy,learned:learned,previous:previous,proof:proof,replayHints:hints)
       try read(0,48){ _=stream.feed($0,preview:false) }; try Task.checkCancellation(); return stream.end()
     }
     let reading=try whole(decoder); try Task.checkCancellation()
@@ -69,9 +69,8 @@ struct ReplayRequest {
       return ReplayEvidence.singleHearing(original:original,heard:only,terms:terms,blocked:policy.blocked)
     }
     let lex = proof ? ReplayVocabulary.review(full,vocabulary:active,terms:terms,previous:previous) : (text:full,choices:[])
-    let independentText = proof ? Transcript.render(independently,level:.literal,index:Transcript.WordIndex(terms),vocabulary:active,final:true,decoderLayout:true) : independently
     let result=ReplayEvidence.reconcile(original:original,full:lex.text,raw:reading.raw,witness:Transcript.numbers(independently),
-      offered:reading.choices+lex.choices,terms:terms,blocked:policy.blocked,vocabulary:active,interpreted:independentText)
+      offered:reading.choices+lex.choices,terms:terms,blocked:policy.blocked,vocabulary:active)
     try Task.checkCancellation(); return result
   }
 }

@@ -155,7 +155,7 @@ struct MemoryPane: View {
                 VStack(alignment: .leading, spacing: 3) {
                   Text(pair.spelling).font(.headline)
                   Text("原写法：" + pair.spoken).font(.callout).foregroundStyle(.secondary)
-                  Text(pair.adapted(to: BuiltinVocabulary.shared.graph).scope?.label ?? "通用写法")
+                  Text(pair.scope?.label ?? "待再次确认")
                     .font(.caption).foregroundStyle(Color.inkMint)
                 }
                 Spacer()

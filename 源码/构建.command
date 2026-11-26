@@ -45,7 +45,9 @@ fi
 cp "$speech"/{encoder.onnx,decoder.onnx,joiner.onnx,tokens.txt,bpe.model} "$dep/Speech/"; cp "$libs"/{libonnxruntime.dylib,libsherpa-onnx-c-api.dylib} "$dep/Frameworks/"; cp -R "$here/Resources/Profiles" "$dep/Profiles"
 (cd "$dep"; shasum -a 256 -c "$here/Resources/Dependencies.sha256" >/dev/null)
 for table in places.tsv words.tsv readings.tsv collections.tsv catalog.tsv catalog-readings.tsv topics.tsv senses.tsv review.tsv classics.tsv classical-sounds.tsv 来源.txt; do [ -s "$here/Resources/Vocabulary/$table" ] || { echo "缺少内置词库：$table" >&2; exit 1; }; done
-mv "$dep/Profiles" "$c/Resources/"; mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Voice.icns" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"
+mv "$dep/Profiles" "$c/Resources/"; mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"
+xcrun swiftc "$here/Sources/Brand.swift" "$here/Resources/Icon.swift" -o "$stage/DrawIcon"
+"$stage/DrawIcon" "$stage/Shengru.iconset"; iconutil -c icns "$stage/Shengru.iconset" -o "$c/Resources/Shengru.icns"
 # Pinned upstream binary, including its nested signatures and symlinks. An optional archive is still hashed.
 sparkle_sha=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
 archive="${SPARKLE_ARCHIVE:-$stage/Sparkle.tar.xz}"

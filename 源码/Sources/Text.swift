@@ -164,6 +164,7 @@ enum Transcript {
     }
     var nodes = [Node()]
     var exact = [String: String]()
+    private(set) var hasPreferences = false
     let marked: [String]
     let graph: WordContext, prior: [String: Int], previousLine: String, hanAlphabet: Set<Character>?
     init(
@@ -173,8 +174,8 @@ enum Transcript {
       self.graph = graph; self.hanAlphabet = hanAlphabet
       self.prior = prior; self.previousLine = String(previousLine.suffix(96))
       marked = terms.map(\.spelling).filter { $0.contains("\u{E000}") }
-      let learned = learned.filter(BuiltinVocabulary.shared.permitsLearnedPair).map { $0.adapted(to: graph) }
-      for term in terms + learned.filter({ $0.scope == nil }) where !term.spelling.trimmed.isEmpty {
+      // Only a manually entered alias is an exact rewrite. Old unscoped memories are never aliases.
+      for term in terms where !term.spelling.trimmed.isEmpty {
         for raw in [term.spelling.trimmed, term.spoken.trimmed] where !raw.isEmpty {
           let name = raw.lowercased()
           guard exact[name] == nil else { continue }
@@ -195,7 +196,7 @@ enum Transcript {
         }
       }
       for term in learned
-      where term.scope != nil && !term.spoken.isEmpty && exact[term.spoken.lowercased()] == nil {
+      where term.scope != nil && !term.spoken.isEmpty && exact[term.spoken.lowercased()] == nil && BuiltinVocabulary.shared.permitsLearnedPair(term) {
         var node = 0
         for c in term.spoken {
           let k = String(c).lowercased()
@@ -209,12 +210,18 @@ enum Transcript {
           }
         }
         nodes[node].rules.append(term)
+        hasPreferences = true
       }
     }
-    func scan(_ text: String, verbatim: Bool = false, emit: (String, Bool) -> Void) {
+    func scan(_ text: String, verbatim: Bool = false, preferences: Bool = true, suggest: ((ReadingChoice)->Void)? = nil, emit: (String, Bool) -> Void) {
       let chars = Array(text)
       var i = 0
-      var plain = 0
+      var plain = 0, boundaries: SourceLexemes?
+      func cutsWord(_ end:Int, _ replacement:String)->Bool {
+        guard chars[i..<end].allSatisfy(SoundShelf.han) else {return false}
+        if boundaries == nil { boundaries=SourceLexemes(text,chars:chars) }
+        return boundaries!.risk(i..<end,replacingWith:replacement) == .fragment
+      }
       func latin(_ c: Character) -> Bool { c.isASCII && (c.isLetter || c.isNumber || c == "_") }
       while i < chars.count {
         if i > 0 && latin(chars[i - 1]) && latin(chars[i]) {
@@ -224,25 +231,30 @@ enum Transcript {
         var at = i
         var node = 0
         var match: (Int, String)?
+        var offers = [ReadingChoice]()
         while at < chars.count, let next = nodes[node].edges[String(chars[at]).lowercased()] {
           at += 1
           node = next
           if !(at < chars.count && latin(chars[at - 1]) && latin(chars[at])) {
             if let v = nodes[node].value {
               match = (at, v)
-            } else if !nodes[node].rules.isEmpty {
+            } else if preferences, !verbatim, !nodes[node].rules.isEmpty {
               let l = String(chars[max(0, i - 36)..<i])
               let r = String(chars[at..<min(chars.count, at + 36)])
               if !BuiltinVocabulary.identity(l, r) {
-                var ranks = [String: Int]()
+                let heard = String(chars[i..<at]), local = MemoryScope.make(left:l, right:r, graph:graph)
+                let clipped = WordContext.clipped(l,r), alone = (clipped.0+clipped.1).trimmingCharacters(in:BuiltinVocabulary.spokenEdge).isEmpty
+                var votes = [String:Int]()
                 for rule in nodes[node].rules where graph.allowsMemory(rule, left: l, right: r) {
-                  let score = rule.scope?.score(left: l, right: r, graph: graph, prior: prior) ?? 0
-                  if score > 0 { ranks[rule.spelling] = max(ranks[rule.spelling] ?? 0, score) }
+                  guard let support = rule.scope?.support(in:local, standalone:alone), support.offer, rule.spelling != heard, !cutsWord(at,rule.spelling) else {continue}
+                  votes[rule.spelling] = max(votes[rule.spelling] ?? 0, support.takes)
                 }
-                if let best = ranks.values.max(), ranks.values.filter({ $0 == best }).count == 1,
-                  let winner = ranks.first(where: { $0.value == best })
-                {
+                // A known spelling, competing preference, or unrelated topic never loses to frequency.
+                if votes.count == 1, let winner = votes.first, winner.value >= MemoryScope.minimumTakes,
+                  PersonalCorrection.automatic(heard,winner.key) {
                   match = (at, winner.key)
+                } else if suggest != nil, !votes.isEmpty {
+                  offers = votes.keys.sorted().prefix(4).map { ReadingChoice(heard:heard,word:$0,left:String(l.suffix(5)),right:String(r.prefix(5))) }
                 }
               }
             }
@@ -254,6 +266,7 @@ enum Transcript {
           i = end
           plain = end
         } else {
+          if let suggest { offers.forEach(suggest) }
           i += 1
         }
       }
@@ -265,13 +278,13 @@ enum Transcript {
   // to a complete token prevents a short alias from rewriting a URL, a path or a longer name.
   private struct Literals {
     var marker = "\u{E000}", values: [String] = []
-    var titles = [String: String](), quotedChoices = [ReadingChoice]()
+    var titles = [String: String](), quotedChoices = [ReadingChoice](), personalChoices = [ReadingChoice]()
     fileprivate static let protected = try! NSRegularExpression(
       pattern:
         #"(```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)|《[^》\n]*(?:》|$)|“[^”]*(?:”|$)|‘[^’]*(?:’|$)|「[^」]*(?:」|$)|『[^』]*(?:』|$)|\"[^\"\n]*(?:\"|$))|(?i:[a-z][a-z0-9+.\-]*://[^\s，。；！？、（）「」“”]+|[\w.%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}|(?:~/|/|\./|\.\./)[\w.+@~/\-]+|[a-z_][a-z0-9_]*(?:[.:/_@\-][a-z0-9_]+)+(?:\+\+|#)?|[a-z][a-z0-9_]*(?:\+\+|#)|[0-9]+(?:[.:/\-][0-9]+)+)"#
     )
     mutating func mask(_ input: String, index trie: WordIndex, literary: BuiltinVocabulary? = nil,
-      final: Bool = true, suggest: Bool = false, verbatim: Bool = false) -> String {
+      final: Bool = true, suggest: Bool = false, verbatim: Bool = false, suggestPersonal: Bool = false) -> String {
       while input.contains(marker) || trie.marked.contains(where: { $0.contains(marker) }) {
         marker += "\u{E000}"
       }
@@ -287,7 +300,10 @@ enum Transcript {
           out += text
           return
         }
-        trie.scan(text, verbatim: verbatim) { word, fixed in if fixed { appendLiteral(word) } else { out += word } }
+        var offers = [ReadingChoice]()
+        let collect: ((ReadingChoice)->Void)? = suggestPersonal ? { if offers.count < 8 { offers.append($0) } } : nil
+        trie.scan(text, verbatim:verbatim, preferences:final, suggest:collect) { word, fixed in if fixed { appendLiteral(word) } else { out += word } }
+        if suggestPersonal { personalChoices += offers.prefix(max(0,8-personalChoices.count)) }
       }
       for m in Self.protected.matches(in: input, range: NSRange(location: 0, length: ns.length)) {
         let gap = ns.substring(with: NSRange(location: end, length: m.range.location - end))
@@ -341,6 +357,14 @@ enum Transcript {
       }; return out+ns.substring(from:end)
     }
   }
+  static func personalChoices(in text:String,index:WordIndex)->[ReadingChoice] {
+    guard index.hasPreferences else {return []}; var literals=Literals()
+    _ = literals.mask(text,index:index,suggestPersonal:true)
+    return literals.personalChoices.filter { $0.range(in:text) != nil }
+  }
+  static func proseForLearning(_ text:String)->String {
+    Literals.protected.stringByReplacingMatches(in:text,range:NSRange(text.startIndex...,in:text),withTemplate:"\n")
+  }
   // Swift Character offsets for opaque spans; no re-decoder may rewrite a literal or personal spelling.
   static func replayProtected(in text:String, terms:[Term]) -> [Range<Int>] {
     let ns = NSRange(text.startIndex...,in:text)
@@ -390,6 +414,9 @@ enum Transcript {
       }
     }
     for i in chars.indices where result.count<8 {
+      for alias in vocabulary.aliasChoices(in:chars,at:i) {
+        let heard=String(chars[i..<alias.end]); if original.contains(heard) { add(heard,alias.word,String(chars[..<i].suffix(5)),String(chars[alias.end...].prefix(5))) }
+      }
       if let hit=vocabulary.soundshelf.hit(chars,i,minimum:i,enabled:vocabulary.enabled,bias:vocabulary.bias,cache:&cache), !hit.automatic,original.contains(hit.heard) {
         add(hit.heard,hit.word,String(chars[max(0,i-8)..<i]),String(chars[hit.end..<min(chars.count,hit.end+8)]))
       }

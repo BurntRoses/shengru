@@ -36,7 +36,7 @@ struct SoundShelf {
         ranked.append((it.name,score,it.reviewOnly))
       }
       ranked.sort { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }; guard let first=ranked.first, first.1>(ranked.dropFirst().first?.1 ?? -1) else { continue }
-      return Hit(end:e,heard:heard,word:first.0,automatic:!first.2 && first.1>=6)
+      return Hit(end:e,heard:heard,word:first.0,automatic:!first.2 && first.1>=6 && first.1 - (ranked.dropFirst().first?.1 ?? 0)>=2)
     }; return nil
   }
 }

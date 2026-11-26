@@ -53,7 +53,7 @@ struct SettingsPane: View {
       Divider()
       switchLine("先审阅，再确认定稿", $d.options.reviewFirst)
       Divider()
-      HStack { Text("打开听写窗口"); Spacer(); Text(d.openShortcut ? "⌃ ⌥ 空格" : "点按菜单栏声波图标").foregroundStyle(.secondary) }.frame(minHeight:Layout.row)
+      HStack { Text("打开听写窗口"); Spacer(); Text(d.openShortcut ? "⌃ ⌥ 空格" : "菜单栏 → 打开听写").foregroundStyle(.secondary) }.frame(minHeight:Layout.row)
     }
     Surface(inset: Layout.inset, spacing: 8) {
       PanelTitle(title: "整理方式")
@@ -101,7 +101,7 @@ struct SettingsPane: View {
       Text("关闭后不再保存新记录，已有记录可在历史中删除。").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
     }
     Surface(inset:Layout.inset) {
-      PanelTitle(title:"听写记忆"); switchLine("记住我确认的词语修改",$d.options.learning); Divider()
+      PanelTitle(title:"听写记忆"); switchLine("记住我确认的词语修改",$d.options.learning).help("第一次改词只作备选。在不同录音里确认过，并且这句话的用法也相符时，才自动采用。"); Divider()
       switchLine("自动收录常用词", $d.options.collectFrequent).disabled(!d.options.keepText).help(FrequencyCopy.note); Divider()
       switchLine("关联连续听写",$d.options.linkContext).disabled(!d.options.keepText).help("开启文字记录后，同一应用内三分钟内的相邻听写可参考上一段。")
       HStack { Button("查看修改记忆（\(d.memories.count)）") { showMemory = true }.deskAction(); Spacer(); Button("使用引导") { d.openGuide?() }.deskAction() }.padding(.top,8)
@@ -115,7 +115,7 @@ struct SettingsPane: View {
       Text(name)
       Spacer()
       Picker(name, selection: value) { ForEach(choices, id: \.self) { Text($0.rawValue).tag($0) } }
-        .labelsHidden().fixedSize().keyCue().frame(width: 150, alignment: .trailing)
+        .labelsHidden().keyCue().frame(width: Layout.controlRail, alignment: .trailing)
     }.frame(minHeight: Layout.row)
   }
   private func switchLine(_ name: String, _ value: Binding<Bool>) -> some View {
@@ -144,11 +144,12 @@ struct SettingsPane: View {
     return HStack(spacing: 12) {
       Text(name)
       Spacer(minLength: 4)
-      Picker(audio ? "保留录音" : "保留文字", selection: limit) {
-        ForEach([10, 20, 50, 100], id: \.self) { Text("最近 \($0) \(unit)").tag($0) }
-      }
-      .labelsHidden().fixedSize().keyCue().frame(width: 120, alignment: .trailing)
-      Toggle(name, isOn: saved).labelsHidden().toggleStyle(.switch).keyCue()
-    }.frame(minHeight: 40)
+      HStack(spacing:12) {
+        Picker(audio ? "保留录音" : "保留文字", selection: limit) {
+          ForEach([10, 20, 50, 100], id: \.self) { Text("最近 \($0) \(unit)").tag($0) }
+        }.labelsHidden().keyCue().disabled(!saved.wrappedValue)
+        Toggle(name, isOn: saved).labelsHidden().toggleStyle(.switch).keyCue()
+      }.frame(width:Layout.controlRail,alignment:.trailing)
+    }.frame(minHeight:Layout.row)
   }
 }

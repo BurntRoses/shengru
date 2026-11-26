@@ -42,6 +42,7 @@ final class BuiltinVocabulary {
   private struct Node {
     var children: [Character: Int] = [:]
     var word: Int?
+    var competing: [Int] = []
   }
   static let shared = BuiltinVocabulary(
     directory: Bundle.main.resourceURL?.appendingPathComponent("Vocabulary"))
@@ -51,6 +52,7 @@ final class BuiltinVocabulary {
   private let readings: [String: Set<String>]
   private var nodes = [Node()], geoForms = Set<String>(), nearPlaces: [String: Set<String>] = [:]
   let graph: WordContext, enabled: Set<String>
+  private let spellings: Set<String>
   let classics: ClassicalCorpus?
   let soundshelf:SoundShelf
   static let plain = BuiltinVocabulary([],graph:WordContext(topics:[],senses:[]),readings:[:])
@@ -117,13 +119,14 @@ final class BuiltinVocabulary {
       guard policy.usesClassicalSource(w), let topic = w.classicalTopic else { return nil }
       return Word(name: w.name, group: .classical, variants: [], cues: [], flags: "v", tags: w.tags, subject: .arts, section: topic)
     }
-    return BuiltinVocabulary(selected, graph: graph, readings: readings, classics: policy.usesClassics ? classics : nil, bias: WordBias(policy.blocked))
+    return BuiltinVocabulary(selected, graph: graph, readings: readings, spellings:spellings, classics: policy.usesClassics ? classics : nil, bias: WordBias(policy.blocked))
   }
-  private init(_ entries: [Word], graph: WordContext, readings: [String: Set<String>], classics: ClassicalCorpus? = nil, bias: WordBias = WordBias([])) {
+  private init(_ entries: [Word], graph: WordContext, readings: [String: Set<String>], spellings: Set<String>? = nil, classics: ClassicalCorpus? = nil, bias: WordBias = WordBias([])) {
     self.classics = classics; self.bias = bias; soundshelf=SoundShelf(entries)
     self.readings = readings
     self.graph = graph
     enabled = Set(entries.map(\.name))
+    self.spellings = spellings ?? enabled.union(entries.flatMap(\.aliases))
     words = entries
     var owners = [String: Set<String>]()
     for w in entries where !w.aliases.isEmpty {
@@ -149,6 +152,10 @@ final class BuiltinVocabulary {
             nodes[node].children[c] = n
             node = n
           }
+        }
+        if let old=nodes[node].word, old != idx {
+          if !nodes[node].competing.contains(old) { nodes[node].competing.append(old) }
+          if !nodes[node].competing.contains(idx) { nodes[node].competing.append(idx) }
         }
         if nodes[node].word == nil || form == w.name { nodes[node].word = idx }
         if w.group == .place, geoForms.insert(form).inserted, (2...8).contains(form.count) {
@@ -222,16 +229,11 @@ final class BuiltinVocabulary {
   func hints(recent: [String], personal: [Term], previous: [String] = []) -> [String] {
     var seen = Set<String>()
     let own = personal.prefix(12).map(\.spelling)
-    // A first dictation also benefits; never submit the entire place-name table to the decoder.
+    // Replay may recall a name actually used nearby, not other names from the same industry.
     let previousText = String(WordContext.fresh(previous.first ?? "").suffix(240)).lowercased()
     var familiar = [String]()
     if !previousText.isEmpty {
       familiar = Array(exactWords(in: previousText, limit: 8).filter { $0.name.count >= 3 }.map(\.name))
-      let topical = words.lazy.filter {
-        $0.group.industry && $0.name.count >= 4 && !$0.variants.isEmpty
-          && $0.cues.contains(where: previousText.contains)
-      }.prefix(3).map(\.name)
-      familiar += topical
     }
     return Array(
       (own + recent + familiar).filter {
@@ -245,6 +247,22 @@ final class BuiltinVocabulary {
     guard enabled.contains(word), let peers = readings[word] else { return nil }
     let active = peers.intersection(enabled)
     return active.count > 1 ? active : nil
+  }
+  func aliasChoices(in chars:[Character],at i:Int)->[(end:Int,word:String)] {
+    guard nodes.count>1, chars.indices.contains(i), Self.han(chars[i]) else {return []}
+    var node=0, end=i, choices=[(end:Int,word:String)]()
+    while end<chars.count, let next=nodes[node].children[chars[end]] {
+      node=next; end+=1
+      guard let id=nodes[node].word else {continue}
+      let heard=String(chars[i..<end]), left=String(chars[..<i].suffix(28)),right=String(chars[end...].prefix(28)), (l,r)=WordContext.clipped(left,right)
+      if Self.identity(left,right) {continue}
+      for k in nodes[node].competing.isEmpty ? [id] : nodes[node].competing {
+        let w=words[k]; guard w.name != heard, w.variants.contains(heard), !bias.discourages(w.name), !preservesSpelling(heard,insteadOf:w.name),
+          !graph.conflicts(heard,proposed:w.name,left:left,right:right), w.cues.contains(where:{ l.contains($0) || r.contains($0) }) else {continue}
+        choices.append((end,w.name))
+      }
+    }
+    return choices
   }
   func crosses(_ left: String, _ right: String, space: String) -> Bool {
     SpeechLayout.spans(
@@ -265,116 +283,45 @@ final class BuiltinVocabulary {
     func sides(_ i: Int, _ end: Int) -> (String, String) {
       (String(chars[max(0, i - 28)..<i]), String(chars[end..<min(count, end + 28)]))
     }
+    var sounds = [Character: String]()
+    func sound(_ c: Character) -> String {
+      if let cached = sounds[c] { return cached }; let reading = SoundShelf.sound(c); sounds[c] = reading; return reading
+    }
+    var source: SourceLexemes?
+    func risk(_ i:Int,_ end:Int,_ word:String)->SourceLexemes.Risk {
+      if source == nil { source=SourceLexemes(text,chars:chars) }
+      return source!.risk(i..<end,replacingWith:word)
+    }
     func safeWord(_ w: Word, _ raw: String, _ i: Int, _ end: Int) -> String {
-      if w.group == .place || w.name == raw || preservesSpelling(raw, insteadOf: w.name) || bias.discourages(w.name) { return raw }
-      let (left, right) = sides(i, end)
-      if Self.identity(left, right) { return raw }
-      let (localLeft, localRight) = WordContext.clipped(left, right)
-      if w.flags.contains("k") {
-        // 压低 is usually a verb. Only accept the brand before a vehicle + a characteristic predicate.
-        if raw == "压低" {
-          guard localLeft.trimmed.isEmpty || ["那辆", "这辆", "这台", "一辆", "我的", "买的", "我骑的"].contains(where: localLeft.hasSuffix),
-            let vehicle = ["电动自行车", "电动车", "电瓶车", "电单车"].first(where: localRight.hasPrefix) else { return raw }
-          let after = String(localRight.dropFirst(vehicle.count))
-          guard ["需要充电", "没电了", "要充电", "续航", "充满电", "开不动", "骑起来", "能换电"].contains(where: after.hasPrefix) else { return raw }
-        }
-        if raw == "艾玛", !["电动车", "电单车", "电瓶车", "电动自行车"].contains(where: localRight.hasPrefix) { return raw }
-        guard w.variants.contains(raw), !enabled.contains(raw),
-          w.cues.contains(where: { localLeft.contains($0) || localRight.contains($0) }) else { return raw }
-        return w.name
-      }
-      // Award-recipient homophones need the award immediately before and a noun boundary after.
-      // A nearby award alone cannot turn 主办方、主题 or 主要 into a different expression.
+      if w.group == .place || w.name == raw || spellings.contains(raw) || preservesSpelling(raw, insteadOf:w.name) || bias.discourages(w.name) { return raw }
+      let (left,right)=sides(i,end), (l,r)=WordContext.clipped(left,right)
+      guard !Self.identity(left,right), !graph.conflicts(raw,proposed:w.name,left:left,right:right) else { return raw }
+      if w.flags.contains("c"), raw.allSatisfy(\.isASCII),
+        raw.replacingOccurrences(of:" ",with:"").caseInsensitiveCompare(w.name.replacingOccurrences(of:" ",with:"")) == .orderedSame { return w.name }
+      let matched=Set(w.cues.filter { !$0.isEmpty && (l.contains($0) || r.contains($0)) })
+      let facts=matched.filter { cue in !matched.contains(where:{ $0 != cue && $0.contains(cue) }) }
+      let leftFit=matched.contains(where:l.hasSuffix), rightFit=matched.contains(where:r.hasPrefix)
       if w.flags.contains("r") {
-        let next = String(right.drop(while: { $0.isWhitespace }))
-        let boundary =
-          next.isEmpty || next.first?.isPunctuation == true
-          || ["是", "有", "将", "接受", "发表", "获邀", "出席", "表示", "名单", "之一", "们"].contains(
-            where: next.hasPrefix)
-        return boundary && w.cues.contains(where: localLeft.hasSuffix) ? w.name : raw
+        let tail=right.drop(while: \.isWhitespace)
+        guard leftFit, tail.isEmpty || tail.first?.isPunctuation == true || ["是","有","将","接受","发表","获邀","出席","表示","名单","之一","们"].contains(where:tail.hasPrefix) else {return raw}
       }
-      if w.name.hasPrefix("金秋"), raw.hasPrefix("进球") || raw.hasPrefix("金球"),
-        ["比赛", "足球", "射门", "球队", "裁判", "球员", "点球", "球赛", "颁奖"].contains(where: {
-          localLeft.contains($0) || localRight.contains($0)
-        })
-      {
-        return raw
-      }
-      if raw.hasPrefix("今秋"), w.name.hasPrefix("金秋"),
-        !["飘香", "桂花", "丰收", "硕果", "收获", "丹桂", "送爽"].contains(where: {
-          localLeft.contains($0) || localRight.contains($0)
-        })
-      {
-        return raw
-      }
-      if w.group == .code, raw == "携程",
-        ["订票", "订房", "旅行", "平台", "公司", "酒店", "机票"].contains(where: {
-          localLeft.contains($0) || localRight.contains($0)
-        })
-      {
-        return raw
-      }
-      if w.group == .tech || w.group.industry, w.flags.contains("c"),
-        w.name.caseInsensitiveCompare(raw) == .orderedSame
-          || (raw.allSatisfy(\.isASCII)
-            && raw.replacingOccurrences(of: " ", with: "").caseInsensitiveCompare(
-              w.name.replacingOccurrences(of: " ", with: "")) == .orderedSame)
-      {
-        return w.name
-      }
-      if w.name.hasPrefix("金秋"),
-        ["走", "闯", "迈", "扎", "开", "挺", "驶", "推进", "改"].contains(where: left.hasSuffix)
-          || right.hasPrefix("陵")
-      {
-        return raw
-      }
-      let edge = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-      let solo =
-        localLeft.trimmingCharacters(in: edge).isEmpty
-        && localRight.trimmingCharacters(in: edge).isEmpty
-      // Ordinary words need adjacent evidence. A recruiting discussion is not permission to change what somebody bought or wore.
-      if raw.contains("衣服") {
-        let cl = localLeft.trimmingCharacters(in: edge)
-        let cr = localRight.trimmingCharacters(in: edge)
-        guard
-          ["报考", "报名", "参加", "备考", "招募", "了解", "报了", "报的是"].contains(where: cl.hasSuffix)
-            || ["岗位", "招募", "考试", "报名", "计划", "项目"].contains(where: cr.hasPrefix)
-        else { return raw }
-        if ["买", "穿", "洗", "叠", "带了", "拿了", "挑", "件", "换"].contains(where: cl.suffix(5).contains) {
-          return raw
-        }
-      }
-      if w.cues.isEmpty
-        || w.cues.contains(where: { localLeft.contains($0) || localRight.contains($0) })
-      {
-        return w.name
-      }
-      if final && w.group != .tech && !w.group.industry {
-        if solo && w.flags.contains("s") { return w.name }
-        if !raw.contains("衣服") {
-          // Refer back to the immediately preceding clause only for an otherwise unrecognised form.
-          let prev =
-            WordContext.fresh(left).components(separatedBy: WordContext.stops).dropLast().last ?? ""
-          if localLeft.trimmed.isEmpty, !enabled.contains(raw),
-            w.cues.filter({ prev.contains($0) }).count >= 2
-          {
-            return w.name
-          }
-        }
+      let risk=risk(i,end,w.name)
+      guard risk != .fragment else {return raw}
+      // A plausible verb, name, or noun within a longer phrase stays intact on one topical hint.
+      // To replace it, require evidence on both sides; short catalogue names remain choices.
+      if risk == .word, !(leftFit && rightFit && facts.count >= 2) {return raw}
+      if w.flags.contains("k") {return w.variants.contains(raw) && (leftFit || rightFit || facts.count >= 2) ? w.name : raw}
+      if leftFit || rightFit || facts.count >= 2 {return w.name}
+      let solo=l.trimmed.isEmpty && r.trimmed.isEmpty
+      if risk == .none, w.cues.isEmpty || (solo && final && w.flags.contains("s")), raw.count>=4,
+        w.name.count==raw.count, raw.allSatisfy(Self.han), w.name.allSatisfy(Self.han) {
+        let diff=zip(raw,w.name).filter { $0 != $1 }
+        if diff.count == 1 || (raw.count>=6 && diff.count==2), diff.allSatisfy({ sound($0).compare(sound($1), options:.diacriticInsensitive) == .orderedSame }) { return w.name }
       }
       return raw
     }
-    // Only look up phonetic neighbours in a location slot. Require one changed character, equal
-    // Mandarin syllable AND tone, the same administrative suffix, and a unique usable spelling.
-    var sounds = [Character: String]()
-    func sound(_ c: Character) -> String {
-      if let result = sounds[c] { return result }
-      let result = String(c).applyingTransform(.mandarinToLatin, reverse: false) ?? String(c)
-      sounds[c] = result
-      return result
-    }
     // For distinctive names, allow unseen spellings with the same syllables only in the
-    // right field. An exact entry, an identifier or an ordinary clothing phrase wins.
+    // right field. An exact entry, an identifier or an intact source word wins.
     func fromSound(at i: Int, longerThan exact: Int) -> (Int, String)? {
       guard final, let options = patterns[chars[i]] else { return nil }
       var candidates = Set<String>()
@@ -385,7 +332,7 @@ final class BuiltinVocabulary {
         guard n >= 4, end <= count, end > exact, n >= longest else { continue }
         let piece = chars[i..<end]
         let raw = String(piece)
-        guard !geoForms.contains(raw), piece.allSatisfy(Self.han) else { continue }
+        guard !geoForms.contains(raw), !enabled.contains(raw), piece.allSatisfy(Self.han) else { continue }
         let delta = (0..<n).filter { p.letters[$0] != chars[i + $0] }
         guard !delta.isEmpty, delta.count <= n / 2 else { continue }
         let w = words[p.index]
@@ -438,6 +385,7 @@ final class BuiltinVocabulary {
           continue
         }
         if geoForms.contains(raw) { return (end, raw) }
+        if spellings.contains(raw) { continue }
         var matches = Set<String>()
         for j in fragment.indices where !admin || j < n - 1 {
           for candidate in nearPlaces[Self.signature(fragment, j)] ?? [] {
@@ -447,7 +395,7 @@ final class BuiltinVocabulary {
             }
           }
         }
-        if matches.count == 1, let match = matches.first, !bias.discourages(match) { return (end, match) }
+        if matches.count == 1, let match = matches.first, !bias.discourages(match), risk(i,end,match) == .none { return (end, match) }
       }
       return nil
     }
@@ -461,7 +409,7 @@ final class BuiltinVocabulary {
       }
       var at = i
       var node = 0
-      var best: (Int, Int)?
+      var best: (Int, Int)?, competing=[Int]()
       if !(i > 0 && Self.latin(chars[i]) && Self.latin(chars[i - 1])) {
         while at < count, let n = nodes[node].children[fold[at]] {
           at += 1
@@ -469,14 +417,14 @@ final class BuiltinVocabulary {
           if let word = nodes[node].word,
             !(at < count && Self.latin(chars[at - 1]) && Self.latin(chars[at]))
           {
-            best = (at, word)
+            best = (at, word); competing=nodes[node].competing
           }
         }
       }
       if let (end, name) = graph.resolve(
         chars, at: i, minimum: best?.0 ?? i, enabled: enabled, prior: prior, final: final, bias: bias)
       {
-        result += name
+        let raw=String(chars[i..<end]); result += raw == name || risk(i,end,name) == .fragment ? raw : name
         i = end
         continue
       }
@@ -485,11 +433,16 @@ final class BuiltinVocabulary {
         i = end
         continue
       }
-      if let hit=soundshelf.hit(chars,i,minimum:best?.0 ?? i,enabled:enabled,bias:bias,cache:&sounds, review:false), hit.automatic {
+      if let hit=soundshelf.hit(chars,i,minimum:best?.0 ?? i,enabled:spellings,bias:bias,cache:&sounds, review:false), hit.automatic, risk(i,hit.end,hit.word) == .none {
         result += hit.word; i=hit.end; continue
       }
       if let (end, idx) = best {
-        result += safeWord(words[idx], String(chars[i..<end]), i, end)
+        let raw=String(chars[i..<end])
+        if competing.isEmpty { result += safeWord(words[idx],raw,i,end) }
+        else {
+          let candidates=Set(competing.map { safeWord(words[$0],raw,i,end) }.filter { $0 != raw })
+          result += candidates.count == 1 ? candidates.first! : raw
+        }
         i = end
       } else {
         result.append(chars[i])

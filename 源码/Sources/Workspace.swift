@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct WorkspaceView: View {
   @ObservedObject var d: Desk
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.layoutDirection) private var direction
   @LocalState private var search = ""
   @LocalState private var wordSection: DictionarySection = .catalog
   @LocalState private var removed = false
@@ -131,10 +130,9 @@ struct WorkspaceView: View {
   private func sidebar(compact: Bool) -> some View {
     VStack(alignment: compact ? .center : .leading, spacing: 0) {
       HStack(spacing: 9) {
-        WaveMark(power: 0, active: false).frame(width: 21, height: 21).frame(width: 32, height: 32)
-          .background(Color.inkMint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        BrandBadge(size: Layout.sideRow)
         if !compact { Text("语音输入").font(.system(size: 16, weight: .semibold)) }
-      }.frame(height: 36).padding(.horizontal, compact ? 0 : 8)
+      }.frame(height: Layout.navRow).padding(.horizontal, compact ? 0 : 8)
       VStack(spacing: 4) {
         ForEach(Page.allCases, id: \.self) { p in
           let chosen = d.page == p
@@ -150,7 +148,7 @@ struct WorkspaceView: View {
             }.foregroundStyle(chosen ? Color.inkMint : .primary).padding(
               .horizontal, compact ? 0 : 12
             )
-            .frame(maxWidth: .infinity).frame(height: 36)
+            .frame(maxWidth: .infinity).frame(height: Layout.navRow)
           }.buttonStyle(RowSurface(selected: chosen)).keyCue(10)
             .accessibilityLabel(p.rawValue).accessibilityAddTraits(chosen ? .isSelected : []).help(
               p.rawValue)
@@ -206,22 +204,7 @@ struct WorkspaceView: View {
           .fixedSize().keyCue().disabled(d.historyDraft != nil || d.editing).accessibilityLabel("清空历史")
         }
       case .settings:
-        let sections = SettingsSection.allCases
-        ViewThatFits(in:.horizontal) {
-        Picker("设置类别", selection: $d.settingsSection) {
-          ForEach(sections, id: \.self) { Text($0.rawValue).tag($0) }
-        }.labelsHidden().pickerStyle(.segmented).controlSize(.large).fixedSize()
-          .keyCue(13, segment: (sections.firstIndex(of: d.settingsSection) ?? 0, sections.count))
-          .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
-            guard press.modifiers.intersection([.command, .option, .control, .shift]).isEmpty,
-              let index = sections.firstIndex(of: d.settingsSection)
-            else { return .ignored }
-            let forward = (press.key == .rightArrow) == (direction == .leftToRight)
-            d.settingsSection = sections[(index + sections.count + (forward ? 1 : -1)) % sections.count]
-            return .handled
-          }
-          Picker("设置类别",selection:$d.settingsSection) {ForEach(sections,id:\.self) {Text($0.rawValue).tag($0)}}.labelsHidden().pickerStyle(.menu).fixedSize().keyCue()
-        }
+        SectionTabs(title:"设置类别", items:SettingsSection.allCases, selected:$d.settingsSection)
       case .dictate: EmptyView()
       }
     }.frame(minHeight: 38)
@@ -485,14 +468,7 @@ struct WorkspaceView: View {
   }
   private var dictionary: some View {
     VStack(alignment: .leading, spacing: 12) {
-      HStack(spacing: 10) {
-        Picker("词表范围", selection: $wordSection) {
-          ForEach(DictionarySection.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-        }.labelsHidden().pickerStyle(.segmented).fixedSize().keyCue(
-          10, segment: (DictionarySection.allCases.firstIndex(of: wordSection) ?? 0, 3))
-        Spacer(minLength: 4)
-
-      }
+      SectionTabs(title:"词表范围", items:DictionarySection.allCases, selected:$wordSection)
       switch wordSection {
       case .catalog:
         CatalogWords(

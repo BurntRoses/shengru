@@ -358,27 +358,21 @@ struct SessionVocabulary {
     if let cached, cached.policy == policy { return cached.words }
     let words = BuiltinVocabulary.shared.selecting(policy); cached = (policy, words); return words
   }
-  // Both hearings honor the same lexicon, personal corrections and word-bias switches.
-  mutating func open(_ r: Recognizer, hints: [String], level: EditLevel, terms: [Term],
-                     policy: WordPolicy, learned: [Term], previous: [String], proof: Bool) throws -> SpeechStream {
+  // The first hearing is always the model's own. Only an explicitly requested second
+  // hearing can try word hints; its independent witness still receives none.
+  mutating func open(_ r: Recognizer, level: EditLevel, terms: [Term], policy: WordPolicy,
+                     learned: [Term], previous: [String], proof: Bool, replayHints: [String]? = nil) throws -> SpeechStream {
     let vocab = proof ? words(for: policy) : BuiltinVocabulary.plain
     let shield = WordBias(proof ? policy.blocked : [])
-    let admitted = hints.filter { h in
-      !BuiltinVocabulary.shared.enabled.contains(h) || vocab.enabled.contains(h)
-        || terms.contains(where: { $0.spelling == h })
+    var allowed = [String]()
+    if proof, let replayHints {
+      let admitted = replayHints.filter { h in
+        !BuiltinVocabulary.shared.enabled.contains(h) || vocab.enabled.contains(h) || terms.contains { $0.spelling == h }
+      }
+      allowed = vocab.hints(recent:admitted, personal:terms, previous:previous).filter { !shield.discourages($0) }
     }
-    let prior = vocab.graph.preceding(previous)
-    let permitted = learned.filter(BuiltinVocabulary.shared.permitsLearnedPair)
-    let familiar = permitted.map { $0.adapted(to: vocab.graph) }.filter { t in
-      guard t.spelling.count >= 3 else { return false }
-      if let scope = t.scope { return scope.topics.contains { (prior[$0] ?? 0) >= 2 } }
-      return true
-    }.sorted { ($0.scope?.confirmations ?? 1) > ($1.scope?.confirmations ?? 1) }.prefix(4).map(
-      \.spelling)
-    let allowed = vocab.hints(recent: admitted + familiar, personal: terms, previous: previous)
-      .filter { !shield.discourages($0) }
     return try r.open(
-      hints: proof ? allowed : [], level: level, terms: proof ? terms : [], vocabulary: vocab, learned: proof ? permitted : [],
+      hints: allowed, level: level, terms: proof ? terms : [], vocabulary: vocab, learned: proof ? learned : [],
       previous: previous, shield: shield, proof: proof)
   }
 }
@@ -410,7 +404,7 @@ final class SessionAudio {
     }
   }
   func begin(
-    _ id: UUID, url: URL?, hints: [String] = [], level: EditLevel, terms: [Term],
+    _ id: UUID, url: URL?, level: EditLevel, terms: [Term],
     policy: WordPolicy = WordPolicy(), learned: [Term] = [], previous: [String] = [], compact: Bool = true, recover: Bool = true, proof:Bool = true,
     failure: @escaping (Error) -> Void
   ) {
@@ -418,7 +412,7 @@ final class SessionAudio {
     queue.async {
       do {
         guard let r = self.recognizer else { throw VoiceFault.message("语音资源尚未就绪。") }
-        self.stream = try self.vocabulary.open(r, hints: hints, level: level, terms: terms,
+        self.stream = try self.vocabulary.open(r, level: level, terms: terms,
           policy: policy, learned: learned, previous: previous, proof: proof)
         self.key = id
         self.count = 0

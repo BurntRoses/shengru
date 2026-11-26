@@ -18,6 +18,41 @@ struct ReadingChoice: Hashable, Identifiable, Codable {
 
 }
 
+// A token is evidence for keeping the decoder's spelling, not a dictionary verdict.
+// Build the boundary map only when a candidate would actually change some Han characters.
+struct SourceLexemes {
+  enum Risk { case fragment, word, none }
+  private let chars: [Character]
+  private var tokens: [Int:Range<Int>] = [:]
+  private var standalone = [String:Bool]()
+  init(_ text:String, chars:[Character]) {
+    self.chars=chars
+    let tokenizer=NLTokenizer(unit:.word); tokenizer.string=text; tokenizer.setLanguage(.simplifiedChinese)
+    var last=text.startIndex, offset=0
+    tokenizer.enumerateTokens(in:text.startIndex..<text.endIndex) { range,_ in
+      offset += text.distance(from:last,to:range.lowerBound)
+      let n=text.distance(from:range.lowerBound,to:range.upperBound), band=offset..<(offset+n)
+      if n>=2, text[range].allSatisfy(SoundShelf.han) { for k in band { tokens[k]=band } }
+      offset += n; last=range.upperBound; return true
+    }
+  }
+  mutating func risk(_ span:Range<Int>, replacingWith spelling:String)->Risk {
+    let new=Array(spelling), sameLength=new.count==span.count
+    var intact=false
+    for k in span where !sameLength || chars[k] != new[k-span.lowerBound] {
+      guard let token=tokens[k] else { continue }
+      if token.lowerBound<span.lowerBound || token.upperBound>span.upperBound { return .fragment }
+      // Segmentation can group a new name after a verb by position alone. Count it as
+      // an existing word only if it also forms a single token in isolation.
+      let word=String(chars[token]); if standalone[word] == nil {
+        let t=NLTokenizer(unit:.word); t.string=word; t.setLanguage(.simplifiedChinese)
+        standalone[word] = t.tokenRange(at:word.startIndex) == word.startIndex..<word.endIndex
+      }; if standalone[word] == true { intact=true }
+    }
+    return intact ? .word : .none
+  }
+}
+
 // A sparse, local association graph. It ranks spellings of an observed sound, never invents a word.
 struct WordContext {
   struct Sense {
@@ -42,13 +77,15 @@ struct WordContext {
         + after.components(separatedBy: comma).prefix(2).joined(separator: "，")
     }
   }
-  var review = [Review]()
+  private(set) var review = [Review]()
+  private var byReading = [String:[Review]]()
   init(topics rows: [[String]], senses: [[String]], review candidates: [[String]] = []) {
     func parts(_ s: String) -> [String] { s.split(separator: "|").map(String.init) }
     for r in candidates where r.count == 4 || (r.count == 5 && r[4] == "邻句") {
       review.append(
         Review(heard: r[0], alternatives: parts(r[1]), require: parts(r[2]), avoid: parts(r[3]), includeNeighbor: r.count == 5))
     }
+    byReading = Dictionary(grouping:review,by: \.heard)
     for r in rows where r.count == 2 { topics[r[0]] = parts(r[1]) }
     for r in senses where r.count == 7 {
       families[r[0], default: []].append(
@@ -64,7 +101,7 @@ struct WordContext {
     }
     for k in Array(lengths.keys) { lengths[k]?.sort(by: >) }
   }
-  static let stops = CharacterSet(charactersIn: "，。！？；,!?;\n\u{e000}\u{e001}")
+  static let stops = CharacterSet(charactersIn: "，。！？；,!?;.：:《》“”「」\n\u{e000}\u{e001}")
   static let shifts = [
     "换个话题", "换一个话题", "换个问题", "说回", "说到另一件事", "不说这个了", "另一个话题", "另外一件事", "另外说", "题外话", "接下来说", "转到", "再说说", "话说回来",
   ]
@@ -105,14 +142,16 @@ struct WordContext {
     }
     return clause.last.map(weights) ?? [:]
   }
+  func conflicts(_ heard:String, proposed:String, left:String, right:String)->Bool {
+    (byReading[heard] ?? []).contains { rule in
+      guard rule.alternatives.contains(proposed), !rule.avoid.isEmpty else {return false}
+      let context=rule.context(left:left,right:right)
+      return rule.avoid.contains(where:context.contains)
+    }
+  }
   func allowsMemory(_ term: Term, left: String, right: String) -> Bool {
     let (l, r) = Self.clipped(left, right)
-    // A confirmed change to 晶球 is not permission to change 水晶球, even in the same room.
-    for rule in review where rule.heard == term.spoken && rule.alternatives.contains(term.spelling)
-    {
-      let phrase = rule.context(left:left,right:right)
-      if rule.avoid.contains(where: phrase.contains) { return false }
-    }
+    if conflicts(term.spoken,proposed:term.spelling,left:left,right:right) { return false }
     guard let family = forms[term.spoken], let group = families[family] else { return true }
     if let first = term.spoken.first,
       (lengths[first] ?? []).contains(where: { width in
@@ -141,13 +180,7 @@ struct WordContext {
       let after = String(a[end..<min(a.count, end + 40)])
       let (l, r) = Self.clipped(before, after)
       if senses.contains(where: { $0.word == raw && !enabled.contains(raw) })
-        || BuiltinVocabulary.identity(before, after)
-        || (raw == "进球奖"
-          && ["最佳", "最好", "漂亮", "精彩", "年度最佳", "最多", "最快", "最美"].contains(where: l.hasSuffix))
-        || (f == "秋与球"
-          && (r.hasPrefix("奖") || r.hasPrefix("陵")
-            || ["走", "闯", "开", "驶", "迈", "挺"].contains(where: l.hasSuffix)))
-      {
+        || BuiltinVocabulary.identity(before, after) {
         return (end, raw)
       }
       let local = weights(l + " " + r)
@@ -168,12 +201,13 @@ struct WordContext {
         return value > 0 && !relevant.contains(where: { $0 != t && (scores[$0] ?? 0) >= value })
       }
       var ranked = [(String, Int)]()
-      for s in senses where enabled.contains(s.word) {
+      for s in senses where enabled.contains(s.word) && !conflicts(raw,proposed:s.word,left:before,right:after) {
         let direct = s.left.contains(where: { l.hasSuffix($0) || l.hasSuffix($0 + "了") }) || s.right.contains(where: r.hasPrefix)
         let nearby = s.clues.filter { l.contains($0) || r.contains($0) }.count
+        if canonical, s.word != raw, !direct, nearby < 2 { continue }
         var score = (direct ? 8 : 0) + min(5, nearby * 3) + min(4, (local[s.topic] ?? 0) * 2)
         if final, local.isEmpty,
-          continuation || (!canonical && l.trimmed.isEmpty && r.trimmed.isEmpty),
+          continuation || (!neighbours.0.isEmpty && !canonical && l.trimmed.isEmpty && r.trimmed.isEmpty),
           let weight = inherited[s.topic],
           !relevant.contains(where: { $0 != s.topic && (later[$0] ?? 0) > 0 }),
           !inherited.keys.contains(where: { $0 != s.topic && (inherited[$0] ?? 0) >= weight })
@@ -204,9 +238,12 @@ struct WordContext {
   }
 }
 
-// Only compact topic labels and neighbouring vocabulary are persisted, not sentences or app content.
+// Keep a handful of local word cues per distinct, manually edited take. A legacy
+// confirmation count cannot establish whether two edits came from different recordings.
 struct MemoryScope: Codable, Equatable {
-  var topics: [String], anchors: [String], confirmations: Int
+  struct Observation: Codable, Equatable { let record: UUID, topics: [String], anchors: [String] }
+  var topics: [String], anchors: [String], observations: [Observation]? = nil
+  static let minimumTakes = 2
   static let weak: Set<String> = [
     "一个", "这个", "那个", "我们", "你们", "他们", "这里", "那里", "刚才", "今天", "现在", "说的", "已经", "可以", "的是", "就是",
     "还是", "因为", "所以", "然后", "的是", "what", "that", "the", "and", "with", "this", "有了", "这次", "需要",
@@ -222,7 +259,7 @@ struct MemoryScope: Codable, Equatable {
     var anchors = [String]()
     tokenizer.enumerateTokens(in: s.startIndex..<s.endIndex) { range, _ in
       let t = s[range].lowercased()
-      if (2...18).contains(t.count), t.allSatisfy(\.isLetter), !weak.contains(t),
+      if (2...18).contains(t.count), t.allSatisfy(\.isLetter), !weak.contains(t), !WordCapture.isCommon(t),
         !anchors.contains(t)
       {
         anchors.append(t)
@@ -231,28 +268,20 @@ struct MemoryScope: Codable, Equatable {
     }
     return Self(
       topics: scores.keys.filter { scores[$0] == scores.values.max() }.sorted(),
-      anchors: Array(anchors.prefix(6)), confirmations: 1)
+      anchors: Array(anchors.prefix(6)))
   }
-  func score(left: String, right: String, graph: WordContext, prior: [String: Int]) -> Int {
-    let (l, r) = WordContext.clipped(left, right)
-    let text = (l + " " + r).lowercased()
-    let scores = graph.weights(text)
-    let hit = topics.compactMap { scores[$0] }.max() ?? 0
-    let local = anchors.filter { text.contains($0) }.count
-    if !topics.isEmpty, !scores.isEmpty, hit == 0 { return 0 }
-    if hit > 0 || local > 0 {
-      return 5 + min(6, hit * 2 + local * 2) + min(2, max(0, confirmations - 1))
+  func support(in local: Self, standalone: Bool) -> (takes: Int, offer: Bool) {
+    let cues = Set(local.anchors), areas = Set(local.topics)
+    func matches(_ topics: [String], _ anchors: [String]) -> Bool {
+      !cues.isDisjoint(with: anchors) && (topics.isEmpty || areas.isEmpty || !areas.isDisjoint(with: topics))
     }
-    if scores.isEmpty, !WordContext.shifts.contains(where: left.contains),
-      ["刚才", "这次", "那个", "这个"].contains(where: l.contains),
-      topics.contains(where: { (prior[$0] ?? 0) >= 2 })
-    {
-      return 5
-    }
-    return topics.isEmpty && anchors.isEmpty && text.trimmed.isEmpty ? 5 : 0
+    let hits = (observations ?? []).filter { matches($0.topics, $0.anchors) }
+    let count = Set(hits.map(\.record)).count
+    return (count, count > 0 || standalone || (observations == nil && matches(topics, anchors)))
   }
   var label: String {
     let tags = topics.isEmpty ? Array(anchors.prefix(3)) : topics
-    return tags.isEmpty ? "单独说出时" : tags.joined(separator: "、")
+    guard !tags.isEmpty, (observations?.count ?? 0) >= Self.minimumTakes else { return "仅作备选" }
+    return tags.joined(separator: "、")
   }
 }

@@ -16,6 +16,12 @@ enum Layout {
   static let sectionGap: CGFloat = 18
   static let card: CGFloat = 16
   static let row: CGFloat = 38
+  static let formLabel: CGFloat = 88
+  static let controlRail: CGFloat = 244
+  static let tabWidth: CGFloat = 82
+  static let optionRow: CGFloat = 32
+  static let navRow: CGFloat = 36
+  static let sideRow: CGFloat = 32
   static let maxColumn: CGFloat = 800
   static let window = NSSize(width: 864, height: 584)
   static let minimum = NSSize(width: 550, height: 410)
@@ -182,6 +188,59 @@ private struct KeyCue: ViewModifier {
             }.allowsHitTesting(false).accessibilityHidden(true)
         }
       }
+  }
+}
+
+// Size the native bezel itself, not just a SwiftUI frame around a text-sized picker.
+struct UniformSegments: NSViewRepresentable {
+  let title:String, names:[String]
+  @Binding var selection:Int
+  @Environment(\.isEnabled) private var enabled
+  final class Handler: NSObject {
+    var change: ((Int)->Void)?
+    @objc func selectSegment(_ sender:NSSegmentedControl) { change?(sender.selectedSegment) }
+  }
+  func makeCoordinator()->Handler { Handler() }
+  func makeNSView(context:Context)->NSSegmentedControl {
+    let control = NSSegmentedControl(labels:names, trackingMode:.selectOne, target:context.coordinator, action:#selector(Handler.selectSegment(_:)))
+    control.segmentDistribution = .fillEqually; control.controlSize = .regular; control.focusRingType = .none
+    control.setContentHuggingPriority(.defaultLow, for:.horizontal)
+    control.setAccessibilityLabel(title)
+    return control
+  }
+  func updateNSView(_ control:NSSegmentedControl,context:Context) {
+    context.coordinator.change = { [binding = $selection] in binding.wrappedValue = $0 }
+    if control.segmentCount != names.count { control.segmentCount = names.count }
+    for i in names.indices where control.label(forSegment:i) != names[i] { control.setLabel(names[i],forSegment:i) }
+    control.selectedSegment = selection; control.isEnabled = enabled
+  }
+  func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSSegmentedControl,context:Context)->CGSize? {
+    let natural = nsView.intrinsicContentSize
+    return CGSize(width:proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? natural.width,height:natural.height)
+  }
+}
+
+// Tabs share both the visible bezel and the width of each choice. A compact header
+// turns into a menu before it would truncate a label.
+struct SectionTabs<T: Hashable & RawRepresentable>: View where T.RawValue == String {
+  let title: String, items: [T]
+  @Binding var selected: T
+  @Environment(\.layoutDirection) private var direction
+  var body: some View {
+    let index = Binding(get: { items.firstIndex(of:selected) ?? 0 }, set: { if items.indices.contains($0) { selected = items[$0] } })
+    ViewThatFits(in:.horizontal) {
+      UniformSegments(title:title,names:items.map(\.rawValue),selection:index)
+        .frame(width:Layout.tabWidth * CGFloat(items.count))
+        .keyCue(9,segment:(index.wrappedValue,items.count))
+        .onKeyPress(keys:[.leftArrow,.rightArrow]) { press in
+          guard !items.isEmpty, press.modifiers.intersection([.command,.control,.option,.shift]).isEmpty else { return .ignored }
+          let forward = (press.key == .rightArrow) == (direction == .leftToRight)
+          index.wrappedValue = (index.wrappedValue + items.count + (forward ? 1 : -1)) % items.count
+          return .handled
+        }
+      Picker(title,selection:$selected) { ForEach(items,id:\.self) { Text($0.rawValue).tag($0) } }
+        .labelsHidden().pickerStyle(.menu).fixedSize().keyCue().accessibilityLabel(title)
+    }.frame(minHeight:Layout.optionRow)
   }
 }
 

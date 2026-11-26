@@ -15,11 +15,13 @@ struct FrequentWords: Codable, Equatable {
   var ordered: [Entry] { entries.values.sorted { $0.count == $1.count ? $0.spelling.localizedStandardCompare($1.spelling) == .orderedAscending : $0.count > $1.count } }
   var hasEvidence: Bool { !entries.isEmpty || takes.contains { !$0.words.isEmpty } }
   private static func exclusionKey(_ key: String) -> String { Data(SHA256.hash(data: Data(key.utf8))).base64EncodedString() }
-  mutating func observe(_ names: [String], id: UUID) {
+  mutating func observe(_ names: [String], id: UUID, supported: Set<String>? = nil) {
+    let carried = Set(takes.first(where: { $0.id == id })?.words ?? [])
     var keys = Set<String>(), spelling = [String: String]()
     let unique = names.compactMap { name -> String? in
       let key = name.lowercased()
-      guard excluded.isEmpty || !excluded.contains(Self.exclusionKey(key)), keys.insert(key).inserted else { return nil }
+      guard supported?.contains(key) != false || carried.contains(key),
+        excluded.isEmpty || !excluded.contains(Self.exclusionKey(key)), keys.insert(key).inserted else { return nil }
       spelling[key] = name; return key
     }.prefix(96)
     let next = Array(unique), old = takes.firstIndex { $0.id == id }
@@ -49,19 +51,17 @@ struct FrequentWords: Codable, Equatable {
   mutating func clear() { takes.removeAll(); entries.removeAll() }
   func hints(previous: [String], allows: (String) -> Bool) -> [String] {
     let recent = WordContext.fresh(previous.first ?? "").lowercased()
-    // Short homophones never get a personal acoustic boost. Use names in the same conversation,
-    // or established, distinctive Latin identifiers. No learned term is a replacement rule.
+    guard !recent.isEmpty else { return [] }
+    // Frequency is not evidence for an unrelated take, even for a distinctive identifier.
     return Array(ordered.lazy.filter {
       let w = $0.spelling
-      return w.count >= 3 && (recent.contains(w.lowercased()) || ($0.count >= 5 && Self.identifier(w)))
+      return w.count >= 3 && recent.contains(w.lowercased())
     }.map(\.spelling).filter(allows).prefix(4))
-  }
-  private static func identifier(_ s: String) -> Bool {
-    s.count >= 4 && s.utf8.allSatisfy { $0 < 128 } && s.contains(where: \.isLowercase) && s.dropFirst().contains(where: \.isUppercase)
   }
 }
 
 enum WordCapture {
+  static func isCommon(_ word: String) -> Bool { stop.contains(word) }
   private static let stop = Set("这个 那个 这些 那些 一个 一种 有些 一点 一下 一些 一次 一样 一直 一起 一边 一会 一会儿 我们 你们 他们 她们 大家 自己 人家 有人 谁的 什么 为什么 怎么 怎么样 哪个 哪里 这样 那样 现在 刚才 刚刚 之前 之后 然后 接着 最后 首先 其次 第一 第二 今天 明天 昨天 最近 时候 时间 事情 东西 内容 问题 方法 工作 情况 方面 意思 原因 关系 感觉 结果 需要 可以 可能 应该 已经 就是 因为 所以 如果 但是 不过 其实 还有 没有 不是 不要 不能 不用 实在 特别 比较 非常 好像 还是 正在 确实 应当 主要 基本 一般 你好 谢谢 好的 好了 知道 觉得 认为 表示 开始 结束 看看 大概 基本上 实际上 也就是说 来说 对于 来看 确认 用词 名称 名字 项目 代号 版本 小组 系统 应用 测试 产品 我想 我说 好吧 对吧 是的 是吧 的话 来着 地方 公司 人员 方式 办法 部分 过程 时候 用户 个人 边上 对方 中间 重点 信息 记录 讨论 进行 使用 喜欢 经常 介绍 相关 词库 文本 文字 分享 一个是 另一个 另外 之前的 之后的 这次 那次 希望 同意 沟通 重新 更多 时候的 的时候 今天的 他们的 自己的 and the that this with from into have about would should could your our they them then also really hello thanks thank please there here today tomorrow something anything just some want like okay because actually don't again team project update use using next before after need said called".components(separatedBy: " "))
   private static let secret = try! NSRegularExpression(pattern: #"(?i)(密码|验证码|口令|密钥|私钥|身份证|银行卡|手机号|电话号码|住址|邮箱|电子邮件|账号|账户名|password|passcode|api[ _-]?key|access[ _-]?token|secret|https?://|www\.|[\w.+-]+@[\w.-]+|(?:[0-9][ -]?){6,}|[A-Za-z0-9_-]{28,}|(?:^|\s|[:：])[/~][\w./-]+)"#)
   private static let names = try! NSRegularExpression(pattern: #"[「『“《]([\p{Han}A-Za-z][\p{Han}A-Za-z0-9 ·-]{1,19})[」』”》]|(?:项目代号|项目名|产品名|小组名|名字|代号)(?:叫作|叫做|叫|是|为|：|:)([\p{Han}A-Za-z][\p{Han}A-Za-z0-9·-]{1,11})(?=$|[，。！？；、,!?;\s])"#)

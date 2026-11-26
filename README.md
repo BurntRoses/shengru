@@ -2,13 +2,13 @@
 
 按住说话，松开就在光标处输入。适用于 macOS 14 及以上，支持 Apple 芯片和 Intel。内置中英听写模型，第一次打开也可以断网使用。
 
-[下载安装镜像（DMG）](https://github.com/BurntRoses/shengru/releases/download/v2.0.0-preview/Shengru.dmg) · [English](#english) · [使用说明](源码/使用说明.md)
+[下载安装镜像（DMG）](https://github.com/BurntRoses/shengru/releases/download/v1.0.0/Shengru.dmg) · [English](#english) · [使用说明](源码/使用说明.md)
 
 ![悬浮窗设置，预览实际配色、材质和文字大小](docs/appearance.png)
 
 ## 开始使用
 
-1. 打开镜像，把「语音输入」拖入「应用程序」，从那里打开。**此预览版尚未获 Apple 公证。** 若系统拦截首次打开，请先核对文件来自本项目的发布页；决定使用后，可按 [Apple 的说明](https://support.apple.com/zh-cn/102445) 在「系统设置 → 隐私与安全性」为「语音输入」选择「仍要打开」。
+1. 打开镜像，把「语音输入」拖入「应用程序」，从那里打开。**当前镜像尚未获 Apple 公证。** 若系统拦截首次打开，请先核对文件来自本项目的发布页；决定使用后，可按 [Apple 的说明](https://support.apple.com/zh-cn/102445) 在「系统设置 → 隐私与安全性」为「语音输入」选择「仍要打开」。
 2. 按引导允许麦克风。需要在其他应用里输入时，再允许辅助功能。
 3. 将光标放在要输入的位置，按住 **Control + Shift + 空格** 说话，松开定稿。
 
@@ -34,7 +34,7 @@ bash shengru/install.sh
 
 **Shengru is offline Chinese and English dictation for macOS.** Hold **Control + Shift + Space** to speak and release to type into the current field. The bundled model works without an account or an internet connection. The interface is in Simplified Chinese.
 
-[Download the DMG](https://github.com/BurntRoses/shengru/releases/download/v2.0.0-preview/Shengru.dmg), drag the app into Applications, then open it there. Requires macOS 14 or later; Apple silicon and Intel are supported. **This preview is not notarized by Apple.** If macOS blocks the first launch, check that the download came from this project’s release page. If you choose to run it, follow [Apple’s instructions](https://support.apple.com/en-us/102445) to select **Open Anyway** for Shengru in **System Settings → Privacy & Security**. The terminal installer above checks the SHA-256 digest and preserves the system’s security checks.
+[Download the DMG](https://github.com/BurntRoses/shengru/releases/download/v1.0.0/Shengru.dmg), drag the app into Applications, then open it there. Requires macOS 14 or later; Apple silicon and Intel are supported. **This mirror is not notarized by Apple.** If macOS blocks the first launch, check that the download came from this project’s release page. If you choose to run it, follow [Apple’s instructions](https://support.apple.com/en-us/102445) to select **Open Anyway** for Shengru in **System Settings → Privacy & Security**. The terminal installer above checks the SHA-256 digest and preserves the system’s security checks.
 
 Click a word in the main window, history, or floating panel to edit it in place. **⌘↩** saves; **Esc** cancels. Confirmed spelling corrections are remembered locally in context. Edits to history stay in history; edits to the current dictation can replace the original passage only if its text and cursor still match. Keep a recording to recheck uncertain words against the audio.
 

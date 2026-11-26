@@ -1,5 +1,6 @@
 import CoreFoundation
 import Foundation
+import NaturalLanguage
 
 struct ConversationWindow {
   private var latest: (id: UUID, destination: String, at: Date)?
@@ -70,18 +71,6 @@ struct CorrectionKey: Hashable {
   let spoken: String, spelling: String
 }
 extension Term {
-  func adapted(to graph: WordContext) -> Self {
-    // Older explicit aliases stay intact on disk. A known homophone is only applied in its own field.
-    guard scope == nil else { return self }
-    let named = graph.forms[spoken]
-    let offered = graph.review.contains { $0.heard == spoken && $0.alternatives.contains(spelling) }
-    guard let name = named ?? (offered ? graph.forms[spelling] : nil),
-      let sense = graph.families[name]?.first(where: { $0.word == spelling })
-    else { return self }
-    var t = self
-    t.scope = MemoryScope(topics: [sense.topic], anchors: [], confirmations: 1)
-    return t
-  }
   var correctionKey: CorrectionKey { CorrectionKey(spoken: spoken, spelling: spelling) }
 }
 
@@ -96,8 +85,8 @@ enum PersonalCorrection {
     func clauses(_ s: String) -> [String] {
       s.components(separatedBy: delimiters).map(\.trimmed).filter { !$0.isEmpty }
     }
-    let lhs = clauses(before)
-    let rhs = clauses(after)
+    let lhs = clauses(Transcript.proseForLearning(before))
+    let rhs = clauses(Transcript.proseForLearning(after))
     guard lhs.count == rhs.count else { return [] }
     var seen = Set<CorrectionKey>()
     var spellings = [String: String]()
@@ -121,8 +110,9 @@ enum PersonalCorrection {
         break
       }
       guard let hit = b.range(of: pair.spelling) else { continue }
-      pair.scope = MemoryScope.make(
-        left: String(b[..<hit.lowerBound]), right: String(b[hit.upperBound...]), graph: graph)
+      let left = String(b[..<hit.lowerBound]), right = String(b[hit.upperBound...])
+      guard !BuiltinVocabulary.identity(left,right), !ClassicalCorpus.verbatim(left) else { continue }
+      pair.scope = MemoryScope.make(left:left, right:right, graph:graph)
       let word = pair.spoken.lowercased()
       if let prior = spellings[word], prior != pair.spelling { conflicts.insert(word) }
       spellings[word] = pair.spelling
@@ -147,23 +137,38 @@ enum PersonalCorrection {
     }
     return differences.allSatisfy {a,b in guard let l=sound(a),let r=sound(b) else{return false};return l==r}
   }
-  static func merging(_ chosen: [Term], into old: [Term]) -> [Term] {
+  // Keep an edit between two different Latin words available for review. Case, spacing
+  // and a transposed pair of letters are narrower evidence of an actual spelling habit.
+  static func automatic(_ heard:String,_ word:String)->Bool {
+    if let known = WordCatalog.shared.byName[heard.lowercased()], known.name != word { return false }
+    guard heard.allSatisfy(\.isASCII) || word.allSatisfy(\.isASCII) else { return true }
+    let a=Array(heard.lowercased().filter { !$0.isWhitespace }), b=Array(word.lowercased().filter { !$0.isWhitespace })
+    if a==b {return true}; guard a.count==b.count,
+      WordCatalog.shared.byName[word.lowercased()]?.name == word || (word.contains(where:\.isLowercase) && word.dropFirst().contains(where:\.isUppercase)) else {return false}
+    let diff=a.indices.filter{a[$0] != b[$0]}
+    return diff.count==2 && diff[0]+1==diff[1] && a[diff[0]]==b[diff[1]] && a[diff[1]]==b[diff[0]]
+  }
+  static func merging(_ chosen: [Term], into old: [Term], record: UUID, before: String, after: String) -> [Term] {
     var out = old
+    var undone = Set<CorrectionKey>()
+    // Revising the same passage can withdraw its vote, not create an inverse preference.
+    for i in out.indices.reversed() {
+      let saved = out[i]
+      guard var scope = saved.scope, var votes = scope.observations,
+        votes.contains(where: { $0.record == record }), before.contains(saved.spelling), !after.contains(saved.spelling) else { continue }
+      votes.removeAll { $0.record == record }; scope.observations = votes
+      undone.insert(.init(spoken:saved.spelling, spelling:saved.spoken))
+      if let last = votes.last { scope.topics = last.topics; scope.anchors = last.anchors; out[i].scope = scope }
+      else { out.remove(at:i) }
+    }
     for var t in chosen {
-      if let i = out.firstIndex(where: {
-        $0.correctionKey == t.correctionKey && $0.scope?.topics == t.scope?.topics
-          && ($0.scope?.topics.isEmpty == false || $0.scope?.anchors == t.scope?.anchors)
-      }), var scope = t.scope {
-        scope.anchors = Array(
-          NSOrderedSet(array: (out[i].scope?.anchors ?? []) + (t.scope?.anchors ?? [])).array
-            .compactMap { $0 as? String }.prefix(12))
-        scope.confirmations = (out[i].scope?.confirmations ?? 0) + 1
-        t.id = out[i].id
-        t.scope = scope
-        out[i] = t
-      } else {
-        out.append(t)
-      }
+      guard var scope = t.scope, !undone.contains(t.correctionKey) else { continue }
+      let i = out.firstIndex { $0.correctionKey == t.correctionKey }
+      var votes = i.flatMap { out[$0].scope?.observations } ?? []
+      votes.removeAll { $0.record == record }
+      votes.append(.init(record:record, topics:scope.topics, anchors:scope.anchors))
+      scope.observations = Array(votes.suffix(12)); t.scope = scope
+      if let i { t.id = out[i].id; out[i] = t } else { out.append(t) }
     }
     return out
   }
@@ -191,12 +196,14 @@ enum PersonalCorrection {
         br += 1
       }
     }
-    // A single Chinese character is too broad a substitution; retain neighbouring letters in the proposed pair.
-    if min(ar - lo, br - lo) == 1, ar < a.count, br < b.count, a[ar].isLetter && !a[ar].isASCII {
-      ar += 1
-      br += 1
+    // A one-character Han diff belongs to a word, not to an arbitrary character plus
+    // the following particle. Use the corrected word's boundaries or do not learn it.
+    if ar-lo==1, br-lo==1, SoundShelf.han(a[lo]), SoundShelf.han(b[lo]) {
+      let text=String(b), tokenizer=NLTokenizer(unit:.word); tokenizer.string=text; tokenizer.setLanguage(.simplifiedChinese)
+      let range=tokenizer.tokenRange(at:text.index(text.startIndex,offsetBy:lo)), token=text[range]
+      guard (2...10).contains(token.count), token.allSatisfy(SoundShelf.han) else {return nil}
+      lo=text.distance(from:text.startIndex,to:range.lowerBound); br=lo+token.count; ar=br
     }
-    if min(ar - lo, br - lo) == 1, lo > 0, a[lo - 1].isLetter && !a[lo - 1].isASCII { lo -= 1 }
     // A space between Chinese and a Latin name is typography, not part of the alias.
     let edge = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "."))
     let old = String(a[lo..<ar]).trimmingCharacters(in: edge)

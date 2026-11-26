@@ -38,11 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     desk.openGuide = { [weak self] in self?.onboard() }
     launcher.action = { [weak self] in self?.open(.dictate) }
     desk.openShortcut = launcher.install()
-    statusItem.button?.toolTip = "语音输入 · 点按打开，右键查看菜单"
-    statusItem.button?.target = self; statusItem.button?.action = #selector(statusPressed)
-    statusItem.button?.sendAction(on:[.leftMouseUp,.rightMouseUp])
     menu.autoenablesItems = false
     menu.delegate = self
+    statusItem.menu = menu
+    statusItem.button?.toolTip = "语音输入 · 听写菜单"
+    statusItem.button?.setAccessibilityIdentifier("ShengruStatusItem")
     statusIcon()
     desk.start()
     let nc = NSWorkspace.shared.notificationCenter
@@ -89,20 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
   }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool { false }
   func applicationDidBecomeActive(_ notification: Notification) { desk?.refresh(retryKeyboard:true) }
-  @objc private func statusPressed() {
-    guard let button = statusItem.button else { return }
-    let event = NSApp.currentEvent
-    if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-      menu.popUp(positioning:nil,at:NSPoint(x:0,y:button.bounds.maxY+3),in:button)
-    } else { open(.dictate) }
-  }
   private func statusIcon() {
     let listening = desk?.phase == .listen
-    let sym = listening ? "waveform.circle.fill" : "waveform"
-    let icon = NSImage(systemSymbolName: sym, accessibilityDescription: listening ? "正在听写" : "语音输入")
-    icon?.isTemplate = true
-    statusItem?.button?.image = icon
-    statusItem?.button?.contentTintColor = listening ? .systemGreen : nil
+    guard let button = statusItem?.button else { return }
+    button.image = listening ? BrandArtwork.menuRecording : BrandArtwork.menuIdle
+    button.contentTintColor = listening ? .systemGreen : nil
+    button.setAccessibilityLabel(listening ? "语音输入，正在听写" : "语音输入")
   }
   private func add(
     _ title: String, _ action: Selector?, _ symbol: String? = nil, _ key: String = ""
@@ -254,7 +246,7 @@ struct WelcomeView: View {
   var body: some View {
     VStack(alignment:.leading,spacing:16) {
       HStack(spacing:12) {
-        Image(systemName:step == 0 ? "waveform" : "internaldrive").font(.title2).foregroundStyle(Color.inkMint).frame(width:46,height:46).navigationGlass(14)
+        BrandBadge(size: 48)
         VStack(alignment:.leading,spacing:4) {
           Text(step == 0 ? "在这台 Mac 上听写" : "选择要留下的内容").font(.title2.bold()).accessibilityAddTraits(.isHeader)
           Text(step == 0 ? "语音在本机转成文字，断网也能用。" : "记录只保存在当前账户，可随时删除。").font(.callout).foregroundStyle(.secondary)

@@ -65,11 +65,10 @@ enum ReplayEvidence {
     if original.isEmpty { return Result(text:heard,choices:[]) }
     return reconcile(original:original,full:original,raw:"",witness:heard,offered:[],terms:terms,blocked:blocked)
   }
-  static func reconcile(original:String,full:String,raw:String,witness:String,offered:[ReadingChoice],terms:[Term],blocked:[String],vocabulary:BuiltinVocabulary?=nil,interpreted:String?=nil) -> Result {
+  static func reconcile(original:String,full:String,raw:String,witness:String,offered:[ReadingChoice],terms:[Term],blocked:[String],vocabulary:BuiltinVocabulary?=nil) -> Result {
     guard !original.isEmpty else {return .init(text:full,choices:offered)}
     let base=Line(original), one=Line(raw), two=Line(witness), primary=align(base,Line(full)), secondary=align(base,two), acoustic=align(base,one)
     guard !base.keys.isEmpty else {return .init(text:original,choices:[])}
-    let contextualRead=interpreted.map{align(base,Line($0))}, checked=Set(contextualRead?.changes ?? [])
     let first=primary.changes,second=secondary.changes,firstSet=Set(first),b=Dictionary(second.map{($0.span,$0.word)},uniquingKeysWith:{x,_ in x}),a=Dictionary(acoustic.changes.map{($0.span,$0.word)},uniquingKeysWith:{x,_ in x})
     let shield=WordBias(blocked), locked=Transcript.replayProtected(in:original,terms:terms)
     var frozen=[Range<Int>](), applied=[(Range<Int>,String)](), proposals=[(Range<Int>,String)](),seen=Set<Edit>()
@@ -118,12 +117,13 @@ enum ReplayEvidence {
       guard max(e.span.count,word.count)<=16,old != word,!old.contains("\n"),!word.contains("\n"),!shield.discouragesChange(word,left:base.chars[..<r.lowerBound],right:base.chars[r.upperBound...]), !isGuarded(r) else {continue}
       let left=String(base.chars[..<r.lowerBound].suffix(42)),right=String(base.chars[r.upperBound...].prefix(24))
       guard !ClassicalCorpus.verbatim(left),!BuiltinVocabulary.identity(left,right) else {continue}
-      let paired=firstSet.contains(e) && b[e.span]==word
-      let contextual=firstSet.contains(e) && a[e.span] != word && comparable(old,word) && secondary.covers(e.span) && acoustic.covers(e.span) && !nearby(e,second) && !nearby(e,acoustic.changes) && comparable(b[e.span] ?? old,word) && comparable(a[e.span] ?? old,word)
+      // Applying the same lexicon to two readings is not a second vote. For ordinary
+      // words the independent, unhinted audio must actually have produced the new spelling.
+      let paired=firstSet.contains(e) && b[e.span]==word && acoustic.covers(e.span) && !one.keys.isEmpty &&
+        (a[e.span]==word || (!nearby(e,acoustic.changes) && comparable(a[e.span] ?? old,word)))
       let contextCount=min(4,e.span.lowerBound)+min(4,base.keys.count-e.span.upperBound)
       let safe = !word.isEmpty && max(e.span.count,word.count)<=8 && old.allSatisfy(SoundShelf.han) && word.allSatisfy(SoundShelf.han) && sensitive.isDisjoint(with:old+word) && (contextCount>=2 || (!old.isEmpty && comparable(old,word))) && (!old.isEmpty || word.count<=2)
-      let twice=firstSet.contains(e) && checked.contains(e) && secondary.covers(e.span) && acoustic.covers(e.span) && !word.isEmpty && !old.isEmpty && old.count==word.count && zip(old,word).allSatisfy { x,y in vocabulary?.classics?.replayClose(x,y) ?? comparable(String(x),String(y)) }
-      if safe && (paired || contextual || twice) {applied.append((r,word))}
+      if safe && paired {applied.append((r,word))}
       else if proposals.count<40 {proposals.append((r,word))}
     }
     applied.sort{$0.0.lowerBound != $1.0.lowerBound ? $0.0.lowerBound<$1.0.lowerBound : $0.0.upperBound<$1.0.upperBound}

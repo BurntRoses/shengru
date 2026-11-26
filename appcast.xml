@@ -2,12 +2,12 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
  <channel><title>语音输入 · Shengru</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>语音输入 2.0.0</title><pubDate>Thu, 26 Nov 2026 13:34:03 +0000</pubDate>
-   <sparkle:version>17</sparkle:version><sparkle:shortVersionString>2.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v2.0.0-preview/Shengru.dmg" type="application/octet-stream" length="156708110" sparkle:edSignature="GKdlajmiNRKiiQSDZaREM2Hsscf6JqE/IOAe80jO+uKryi455IyqC18UOczTp28SLdeoYJcY+gRTfJ5naFdfDA=="></enclosure>
+  <item><title>语音输入 1.0.0</title><pubDate>Thu, 26 Nov 2026 18:11:06 +0000</pubDate>
+   <sparkle:version>18</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0/Shengru.dmg" type="application/octet-stream" length="156793495" sparkle:edSignature="M0pUVjVtEsQUFsX0y01TOwkk43oqcoNnhs83q6PCwIt62DCT5aUcRFq6xbVZfSmFt/xZmOxk1MKC0y3hDxMTAw=="></enclosure>
   </item>
  </channel>
 </rss><!-- sparkle-signatures:
-edSignature: iOHk8HOhj3nLemC2fkj0XRsCCLv8N/cYfPpDHfbPlptsmOLEPyEWwfW9BjHPW+Sf2E5jocg/X0zt/H3IrgvoAA==
-length: 1076
+edSignature: 8uZsa6EsXBGH9gpMRAWHY83so5mQ9My8DNk8haerbcUcGeApishlKyACWcandOYAy+WapvLu9Qs4tKjup3dKAg==
+length: 1068
 -->
