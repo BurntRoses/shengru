@@ -40,6 +40,8 @@
 2. 首次打开，按引导允许麦克风、辅助功能和输入监控，再选择记录偏好。没有输入监控时，可先用 **Control + Shift + 空格**。
 3. 如流启动时在后台检查新版。设置里可看大小、更新内容和进度，选择安装、稍后再说或忽略该版。卸载入口在「设置 → 更新」，可选择是否同时删掉本机资料。
 
+从旧版「语音输入」手动更新：退出旧版，只把旧应用移到废纸篓，再将「如流」拖入「应用程序」。已有记录和设置会保留。
+
 **当前下载是 1.0.0 修订 21 候选版，未经 Apple 公证。** 首次打开可能受到系统拦截；请核对下载来源并参阅 [Apple 的说明](https://support.apple.com/zh-cn/102445)。此候选版升级后可能需要重新授权。
 
 用终端安装（需要 Git）：
@@ -56,5 +58,7 @@ bash PhraseFlow/install.sh
 Click a word in the floating panel, workspace or history to edit it. Save with **⌘↩**. PhraseFlow checks the original text and selection before replacing a passage in another app. You can replay the recording, choose a different spelling, and import your own vocabulary. Your speech, text and corrections stay on your Mac. Only update checks, software updates and optional model downloads use the network.
 
 [Download for macOS](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.21/PhraseFlow.dmg). Install in Applications and follow the first-run guide. Runs on macOS 14 or later; Apple silicon and Intel are supported. The interface is in Simplified Chinese. **This candidate is not notarized by Apple.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445). System permissions may need to be granted again after updating this candidate.
+
+Updating manually from **语音输入**? Quit the old app, move just its application bundle to the Trash, then install **如流**. Your recordings, text and preferences stay on this Mac.
 
 [构建 / Build](源码/使用说明.md#从源码构建) · [第三方许可 / Third-party notices](源码/Resources/Licenses)
