@@ -14,13 +14,14 @@ if [ "$mode" = release ]; then
   codesign --verify -R='anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app" || { echo '请先用 Developer ID Application 构建并签名。' >&2; exit 1; }
 fi
 work="$(mktemp -d)"; stage="$(mktemp -d "$(dirname "$out")/.voice-image.XXXXXX")"; trap 'rm -rf "$work" "$stage"' EXIT
-bundle="$work/如流.app"; ditto "$app" "$bundle"; ln -s /Applications "$work/Applications"
+# The single visible item is the app's installer. A Finder drag is only a copy and cannot launch its destination.
+bundle="$work/如流.app"; ditto "$app" "$bundle"
 notarize(){ xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json > "$stage/receipt.json"; if [ "$(plutil -extract status raw -o - "$stage/receipt.json")" != Accepted ]; then cat "$stage/receipt.json" >&2; echo '未获公证，不会生成分发镜像。' >&2;exit 1;fi; }
 if [ "$mode" = release ]; then
   ditto -c -k --keepParent "$bundle" "$stage/application.zip"; notarize "$stage/application.zip"; xcrun stapler staple "$bundle"; xcrun stapler validate "$bundle"
   syspolicy_check distribution "$bundle"; spctl --assess --type execute "$bundle"
 fi
-hdiutil create -quiet -volname '如流' -srcfolder "$work" -fs HFS+ -format UDZO -imagekey zlib-level=6 "$stage/product.dmg"
+hdiutil create -quiet -volname '如流 · 双击安装' -srcfolder "$work" -fs HFS+ -format UDZO -imagekey zlib-level=6 "$stage/product.dmg"
 if [ "$mode" = release ]; then
   codesign --sign "$DEVELOPER_ID" --timestamp "$stage/product.dmg"
   team(){ codesign -dv --verbose=4 "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }; [ "$(team "$stage/product.dmg")" = "$(team "$bundle")" ] || { echo '应用与镜像的开发者不一致。' >&2;exit 1; }

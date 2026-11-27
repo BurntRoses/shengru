@@ -6,11 +6,20 @@ fail(){ printf '%s\n' "$*" >&2; exit 1; }
 [[ $(uname -s) = Darwin ]] || fail '需要 macOS 14 或更高版本。'
 major=$(sw_vers -productVersion | cut -d. -f1); (( major >= 14 )) || fail '需要 macOS 14 或更高版本。'
 here=$(cd "$(dirname "$0")" && pwd); app='如流.app'; dest='/Applications'
+open_installed(){
+  local bundle="$1" uid; uid=$(/usr/bin/id -u)
+  if [[ "$uid" = 0 || "$(/usr/bin/stat -f %u /dev/console)" != "$uid" ]]; then
+    printf '已安装：%s\n登录 Mac 后即可打开如流。\n' "$bundle"; return 0
+  fi
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$bundle" || :
+  printf '正在打开：%s\n' "$bundle"
+  /usr/bin/open "$bundle" --args --phraseflow-installed "$bundle" || fail "如流已安装，但未能启动。请在访达中打开：$bundle"
+}
 for d in /Applications "$HOME/Applications"; do
   for bundle in "$d"/*.app; do
     [[ -f "$bundle/Contents/Info.plist" ]] || continue
     id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null || true)
-    [[ "$id" != cn.shengru.dictation ]] || fail "已安装：$bundle。请在「设置 → 更新」中检查更新。"
+    if [[ "$id" = cn.shengru.dictation ]]; then open_installed "$bundle"; exit 0; fi
   done
 done
 if [[ ! -w "$dest" ]]; then dest="$HOME/Applications"; mkdir -p "$dest"; fi
@@ -29,5 +38,4 @@ if ! /usr/bin/xattr -p com.apple.quarantine "$stage/$app" >/dev/null 2>&1; then
   /usr/bin/xattr -w com.apple.quarantine "$(printf '0083;%x;PhraseFlow Installer;' "$(date +%s)")" "$stage/$app"
 fi
 /bin/mv -n "$stage/$app" "$dest/"; [[ ! -e "$stage/$app" ]] || fail '安装位置已有应用，未覆盖。'
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$dest/$app"
-printf '已安装：%s/%s\n请从 Finder 打开，按系统提示授权。\n' "$dest" "$app"
+open_installed "$dest/$app"

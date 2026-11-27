@@ -27,7 +27,6 @@ import UniformTypeIdentifiers
       NSApp.terminate(nil)
       return
     }
-    NSApp.setActivationPolicy(.regular)
     installMenu()
     capsule = CapsuleController(desk)
     desk.onChange = { [weak self] in self?.capsule.sync() }
@@ -254,6 +253,7 @@ import UniformTypeIdentifiers
   }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
+    guard desk != nil else { return false } // The installer has no dictation workspace.
     if desk?.options.welcomed == false {
       if let welcome, welcome.isVisible { Self.present(welcome) } else { onboard() }
     } else {
@@ -262,7 +262,7 @@ import UniformTypeIdentifiers
     return true
   }
   func applicationWillTerminate(_ notification: Notification) {
-    if !removingApp {desk?.shutdown();NSApp.setActivationPolicy(.accessory)}
+    if !removingApp {desk?.shutdown()}
     refreshTimer?.invalidate()
     for t in watches { NSWorkspace.shared.notificationCenter.removeObserver(t) }
   }

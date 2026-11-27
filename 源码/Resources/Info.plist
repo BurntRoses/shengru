@@ -24,15 +24,12 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>22</string>
-	<key>LSUIElement</key>
-	<true/>
+	<string>23</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>PhraseFlowReleaseNotes</key>
-	<string>新版声波图标，日常听写无需打开主窗口。
-悬浮窗默认磨砂，可拖到全屏底部，位置自动记住。
-内置均衡听写，其他四款模型按需下载。</string>
+	<string>打开镜像中的如流，点“安装并打开”即可开始。终端安装后也会自动打开。
+如流按普通应用注册，保留菜单栏听写；重复安装只打开已有的应用。</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

@@ -4,7 +4,7 @@
 
 Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** 说话，松开输入。要连续说一段，短按开始，再按结束。不用打开主窗口。
 
-[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.22) · [使用手册](源码/使用说明.md) · [English](#english)
+[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.23) · [使用手册](源码/使用说明.md) · [English](#english)
 
 <img src="docs/frost.png" width="570" alt="默认青瓷磨砂悬浮窗，顶部横条可拖动，下方显示听写文字">
 
@@ -37,7 +37,7 @@ Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** �
 
 ## 安装与模型
 
-1. 下载 **PhraseFlow.dmg**，把「如流」拖入「应用程序」，双击打开。支持 macOS 14 及以上，兼容 Apple 芯片和 Intel。
+1. 打开 **PhraseFlow.dmg**，双击镜像里唯一的「如流」，点 **安装并打开**。安装完成会自动进入首次引导，无需再去访达找。支持 macOS 14 及以上，兼容 Apple 芯片和 Intel。
 2. 在首次引导中设置麦克风、辅助功能、输入监控，选择是否保存文字和录音。还没允许输入监控时，可用 **Control + Shift + 空格** 听写。
 3. 安装包只含「均衡听写」，首次使用不用下载。需要更快出字、更长听写窗口或更大模型时，在「设置 → 模型」点「下载」，装好后点「使用」。听写和复听均可离线进行。
 
@@ -47,10 +47,10 @@ Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** �
 
 **当前下载：1.0.0 候选版，尚未获 Apple 公证。** 首次打开可能出现系统提示，更新后可能需要重新授权。见 [Apple 的首次打开说明](https://support.apple.com/zh-cn/102445)。
 
-也可以用终端安装：
+也可以用终端安装，完成后会自动打开。已经安装时，只打开已有的如流：
 
 ```sh
-git clone --depth 1 --branch v1.0.0-build.22 https://github.com/BurntRoses/shengru.git PhraseFlow
+git clone --depth 1 --branch v1.0.0-build.23 https://github.com/BurntRoses/shengru.git PhraseFlow
 bash PhraseFlow/install.sh
 ```
 
@@ -62,6 +62,6 @@ bash PhraseFlow/install.sh
 
 Edit a finished passage in the panel or history. When available, replay the audio to check a word, then click a suggested spelling to apply it. The frosted panel remembers its position and can sit near the bottom edge in full screen. One balanced model is bundled; four others are optional downloads. Dictation, recordings and personal vocabulary stay on your Mac.
 
-[Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/PhraseFlow.dmg). Drag the app to Applications and follow the first-run guide. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
+[Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg). Open the disk image, double-click **如流**, then choose **安装并打开** (Install and Open). The installed app opens the first-run guide. The terminal installer also opens the app when it finishes. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
 
 [构建 / Build](源码/使用说明.md#从源码构建) · [第三方许可 / Notices](源码/Resources/Licenses)

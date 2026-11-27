@@ -9,36 +9,77 @@ enum Installation {
   static func installed(_ url:URL)->Bool { directories.contains(url.standardizedFileURL.deletingLastPathComponent()) }
   static func register(_ url:URL) { LSRegisterURL(url as CFURL,true) }
   @MainActor static private(set) var handingOff=false
-  @MainActor static func prepare(_ source:URL)->Bool {
-    let originals=directories.flatMap { dir in
+  private static let installArgument="--phraseflow-installed"
+  private static func sameLocation(_ a:URL, _ b:URL)->Bool {
+    a.standardizedFileURL.resolvingSymlinksInPath().path == b.standardizedFileURL.resolvingSymlinksInPath().path
+  }
+
+  // macOS can run an approved first launch from a temporary, read-only location.
+  // Identify the installation by its Launch Services URL or our explicit handoff to the same build.
+  // This hint only suppresses a second install prompt; it never authorizes a write or bypasses system approval.
+  static func launchedFrom(_ target:URL, executableBundle:URL, registeredURL:URL?, arguments:[String])->Bool {
+    if sameLocation(target,executableBundle) || registeredURL.map({ sameLocation(target,$0) }) == true { return true }
+    guard let i=arguments.firstIndex(of:installArgument), arguments.indices.contains(i+1),
+          sameLocation(target,URL(fileURLWithPath:arguments[i+1],isDirectory:true)),
+          let a=Bundle(url:executableBundle)?.executableURL, let b=Bundle(url:target)?.executableURL else { return false }
+    return fm.contentsEqual(atPath:a.path,andPath:b.path)
+  }
+
+  @MainActor static func prepare(_ source:URL, in locations:[URL] = directories, identifier:String = id)->Bool {
+    let originals=locations.flatMap { dir in
       ((try? fm.contentsOfDirectory(at:dir,includingPropertiesForKeys:nil,options:.skipsHiddenFiles)) ?? [])
-        .filter { $0.pathExtension == "app" && Bundle(url:$0)?.bundleIdentifier == id }
+        .filter { $0.pathExtension == "app" && (try? $0.resourceValues(forKeys:[.isSymbolicLinkKey]).isSymbolicLink) != true && Bundle(url:$0)?.bundleIdentifier == identifier }
         .sorted { a,b in
           if a.lastPathComponent == "如流.app" {return b.lastPathComponent != "如流.app"}
           if b.lastPathComponent == "如流.app" {return false}
           return a.lastPathComponent < b.lastPathComponent
         }
     }
-    if installed(source), originals.first?.standardizedFileURL.path == source.standardizedFileURL.path {
-      register(source); return true
+    if let first=originals.first, launchedFrom(first,executableBundle:source,registeredURL:NSRunningApplication.current.bundleURL,arguments:CommandLine.arguments) {
+      register(first); return true
     }
-    let a=NSAlert();a.messageText="将如流安装到“应用程序”"; a.informativeText="安装后再开启听写权限。"
+    let a=NSAlert()
     if let existing=originals.first {
-      a.messageText="如流已安装"; a.informativeText="请使用“应用程序”中的这一份。";a.addButton(withTitle:"在访达中显示");a.addButton(withTitle:"退出")
-      NSApp.activate();if a.runModal() == .alertFirstButtonReturn {NSWorkspace.shared.activateFileViewerSelecting([existing])};return false
+      a.messageText="如流已安装";a.addButton(withTitle:"打开如流");a.addButton(withTitle:"取消")
+      NSApp.activate();if a.runModal() == .alertFirstButtonReturn { openInstalled(existing) };return false
     }
+    a.messageText="安装如流"; a.informativeText="将如流放入“应用程序”，安装后自动打开。"
     a.addButton(withTitle:"安装并打开");a.addButton(withTitle:"取消");NSApp.activate();guard a.runModal() == .alertFirstButtonReturn else {return false}
     do {
-      let dir=directories.first(where:{fm.isWritableFile(atPath:$0.path)}) ?? directories[1]
+      guard let dir=locations.first(where:{fm.isWritableFile(atPath:$0.path)}) ?? locations.last else {return false}
       try fm.createDirectory(at:dir,withIntermediateDirectories:true)
       let dest=dir.appendingPathComponent("如流.app"), stage=dir.appendingPathComponent(".phraseflow-\(UUID().uuidString)",isDirectory:true)
       try fm.createDirectory(at:stage,withIntermediateDirectories:false);defer{try? fm.removeItem(at:stage)}
       let copy=stage.appendingPathComponent("如流.app");try fm.copyItem(at:source,to:copy)
-      try fm.moveItem(at:copy,to:dest);register(dest)
-      let config=NSWorkspace.OpenConfiguration();config.createsNewApplicationInstance=true
-      handingOff=true
-      NSWorkspace.shared.openApplication(at:dest,configuration:config) { _,error in DispatchQueue.main.async {if let error {NSAlert(error:error).runModal()}; NSApp.terminate(nil)} };return false
+      try fm.moveItem(at:copy,to:dest);openInstalled(dest);return false
     } catch { NSAlert(error:error).runModal();return false }
+  }
+
+  @MainActor private static func openInstalled(_ target:URL) {
+    register(target)
+    // Reopen this exact installation if running, never substitute the installer on the disk image.
+    let config=NSWorkspace.OpenConfiguration();config.activates=true;config.allowsRunningApplicationSubstitution=false
+    config.arguments=[installArgument,target.path]
+    handingOff=true
+    // Keep the installer in the foreground until the installed copy can take over its window focus.
+    if let id=Bundle(url:target)?.bundleIdentifier { NSApp.yieldActivation(toApplicationWithBundleIdentifier:id) }
+    NSWorkspace.shared.openApplication(at:target,configuration:config) { app,error in Task { @MainActor in
+      defer { NSApp.terminate(nil) }
+      if let error {
+        let a=NSAlert();a.messageText="如流已安装，未能打开";a.informativeText=error.localizedDescription
+        a.addButton(withTitle:"在访达中显示");a.addButton(withTitle:"完成");NSApp.activate()
+        if a.runModal() == .alertFirstButtonReturn {NSWorkspace.shared.activateFileViewerSelecting([target])}
+        return
+      }
+      guard let app else {return}
+      // Launch Services can return before the destination has a window. Yield the foreground once, when ready.
+      let deadline=ContinuousClock.now.advanced(by:.seconds(10))
+      while !app.isFinishedLaunching && !app.isTerminated && .now < deadline {try? await Task.sleep(for:.milliseconds(80))}
+      guard app.isFinishedLaunching, !app.isTerminated, !app.isActive else {return}
+      NSApp.yieldActivation(to:app);app.unhide();_=app.activate(options:[.activateAllWindows])
+      let transfer=ContinuousClock.now.advanced(by:.seconds(1))
+      while !app.isActive && !app.isTerminated && .now < transfer {try? await Task.sleep(for:.milliseconds(40))}
+    } }
   }
   // Only the recent shelf belongs to this operation. A pinned tile and other Dock preferences are user choices.
   static func ownRecent(_ tile:[String:Any], at bundle:URL)->Bool {

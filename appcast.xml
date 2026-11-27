@@ -2,15 +2,14 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
  <channel><title>如流 · PhraseFlow</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>如流 1.0.0</title><pubDate>Fri, 27 Nov 2026 08:44:12 +0000</pubDate>
-   <sparkle:version>22</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-   <description sparkle:descriptionFormat="plain-text">新版声波图标，日常听写无需打开主窗口。
-悬浮窗默认磨砂，可拖到全屏底部，位置自动记住。
-内置均衡听写，其他四款模型按需下载。</description>
-   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/Shengru.dmg" type="application/octet-stream" length="156773077" sparkle:edSignature="kdbou7Oa6mb3qZVFbDRyNyTEyohZ9LuJrs0hNjn50vVdbpG0Sw2XCHG3kUWBx43QRZjtfqRlo7YBpYCS9RaTDA=="></enclosure>
+  <item><title>如流 1.0.0</title><pubDate>Fri, 27 Nov 2026 10:12:31 +0000</pubDate>
+   <sparkle:version>23</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+   <description sparkle:descriptionFormat="plain-text">打开镜像中的如流，点“安装并打开”即可开始。终端安装后也会自动打开。
+如流按普通应用注册，保留菜单栏听写；重复安装只打开已有的应用。</description>
+   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/Shengru.dmg" type="application/octet-stream" length="156733536" sparkle:edSignature="AtBwrDZWEwfK+EjUzzSwB8I9Zo/9Em7g+IvziB4amiaSglRtNumiOk3Pi3rCVHjPsawEYG8kfgEH82cUEELAAw=="></enclosure>
   </item>
  </channel>
 </rss><!-- sparkle-signatures:
-edSignature: o6fUKitMvqozcHnSKepxwPhORKMUd4CjqrhIUT8kbv8OP/flOjODYvLtNHP0ku1WR35aAP1W+267VeP81Gd/BQ==
-length: 1320
+edSignature: N6btD6XAkDFeZ4BhYhAxM2LJw4QL4sBKmJVZj17Jjlx6xDWZtcvLdlG/FmcDMcjp+78aaiFqlDa8jEuwmcw/CA==
+length: 1334
 -->
