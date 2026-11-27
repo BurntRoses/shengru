@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
- <channel><title>语音输入 · Shengru</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>语音输入 1.0.0</title><pubDate>Fri, 27 Nov 2026 05:58:03 +0000</pubDate>
-   <sparkle:version>20</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.20/Shengru.dmg" type="application/octet-stream" length="156815184" sparkle:edSignature="QHDolel+idWl/GF13UyAnmRLT3FodVLXw9hd2Md8KW0vNBm2ndUDa3+NrLnY3QFFbueMBcJYys4i9B0D+UQiDg=="></enclosure>
+ <channel><title>如流 · PhraseFlow</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
+  <item><title>如流 1.0.0 · 修订 21</title><pubDate>Fri, 27 Nov 2026 06:49:38 +0000</pubDate>
+   <sparkle:version>21</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+   <description sparkle:descriptionFormat="plain-text">默认用右 ⌘ 听写，首次打开可一次设置权限和记录偏好。
+边说边看转写，上一段定稿留在下方。
+悬浮窗新增缓慢晕染的底光，玻璃、磨砂和不透明各有层次。
+新版提醒会显示下载大小、更新说明和进度，也可忽略本次更新。</description>
+   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.21/Shengru.dmg" type="application/octet-stream" length="156870037" sparkle:edSignature="LlgEQLzpNZBiOzBkzCLVf+r/IOlJNB5fd6QFci9gqdbHt/GX+Ixgz+KcVfWnEiFcwKtHiTF2Tp+cfGmY1ckDCQ=="></enclosure>
   </item>
  </channel>
 </rss><!-- sparkle-signatures:
-edSignature: GY46SVz/vMjR9vSP2PdJOP7VxISQ8iLkfE8zHT1L5wq2bElw74uG4ax6GHTJ2fxiE2ELFz9eS9fE0lt0VH9SBQ==
-length: 1077
+edSignature: sLQhoWLShMsfwBePBcMornajPQPuc6nHAj3uwTI3rIyPuwtFJHZQfCR/+VLpMUjN34aToa+TwI0osehLcRyLAg==
+length: 1450
 -->

@@ -3,27 +3,35 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>zh_CN</string>
+	<string>zh-Hans</string>
 	<key>CFBundleDisplayName</key>
-	<string>语音输入</string>
+	<string>如流</string>
 	<key>CFBundleExecutable</key>
 	<string>VoiceInput</string>
 	<key>CFBundleIconFile</key>
-	<string>Shengru.icns</string>
+	<string>PhraseFlow.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>cn.shengru.dictation</string>
 	<key>CFBundleLocalizations</key>
 	<array>
-		<string>zh_CN</string>
+		<string>zh-Hans</string>
+		<string>en</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>语音输入</string>
+	<string>如流</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>20</string>
+	<string>21</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>PhraseFlowReleaseNotes</key>
+	<string>默认用右 ⌘ 听写，首次打开可一次设置权限和记录偏好。
+边说边看转写，上一段定稿留在下方。
+悬浮窗新增缓慢晕染的底光，玻璃、磨砂和不透明各有层次。
+新版提醒会显示下载大小、更新说明和进度，也可忽略本次更新。</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

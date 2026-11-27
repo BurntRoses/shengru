@@ -1,4 +1,5 @@
 import Combine
+import Observation
 import AVFoundation
 import AppKit
 import OSLog
@@ -19,6 +20,17 @@ enum Page: String, CaseIterable {
     }
   }
 }
+// High-frequency microphone samples belong to their own observation scope. Only the
+// waveform, elapsed clock and transcript subscribe; the workspace and editor do not.
+@Observable final class LiveCapture {
+  var stable = ""
+  var tail = ""
+  var mark: ProofMark?
+  var meterHistory = [Double](repeating: 0, count: 9)
+  var level = 0.0
+  var seconds = 0.0
+}
+@Observable final class DraftBuffer { var text = "" }
 final class Desk: ObservableObject {
   @Published var settingsSection: SettingsSection = .dictate
   @Published var page: Page = .dictate { didSet {
@@ -26,10 +38,11 @@ final class Desk: ObservableObject {
     if let r=rehearing, !r.inCapsule, r.origin != page { rehearing=nil }
   } }
   @Published var phase: Phase = .idle { didSet { if (oldValue == .listen) != (phase == .listen) { key.duringDictation(phase == .listen) } } }
-  @Published var stable = ""
-  @Published var tail = ""
+  let live = LiveCapture()
+  var stable: String { get { live.stable } set { live.stable = newValue } }
+  var tail: String { get { live.tail } set { live.tail = newValue } }
   @Published var last = ""
-  @Published private(set) var liveMark:ProofMark?
+  private var liveMark:ProofMark? { get { live.mark } set { live.mark = newValue } }
   private var lastMark:ProofMark?, fadeMark:DispatchWorkItem?
   func inkBefore(_ text:String)->String? { guard phase == .listen, options.appearance.review, options.appearance.animate, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return nil }; return liveMark?.before(in:text) }
   private func paint(_ mark:ProofMark?) {
@@ -57,9 +70,9 @@ final class Desk: ObservableObject {
       }
     }
   }
-  @Published var meterHistory = [Double](repeating: 0, count: 9)
-  @Published var level: Double = 0
-  @Published var seconds: Double = 0
+  var meterHistory: [Double] { get { live.meterHistory } set { live.meterHistory = newValue } }
+  var level: Double { get { live.level } set { live.level = newValue } }
+  var seconds: Double { get { live.seconds } set { live.seconds = newValue } }
   @Published var handsFree = false
   @Published var showEdits = false
   @Published private var copiedText: String?
@@ -74,8 +87,7 @@ final class Desk: ObservableObject {
   @Published var allowMic = false
   @Published var allowKey = false
   @Published var allowInsert = false
-  private static let promptKey = "voice.promptedPermissions"
-  @Published private var prompted = Set((UserDefaults.standard.stringArray(forKey: Desk.promptKey) ?? []).compactMap(Access.init(rawValue:)))
+  @Published private var prompted = Set<Access>()
   @Published private var requestingMic = false
   private var lastPrompt: (Access, TimeInterval)?
   @Published var rows: [Record]
@@ -93,7 +105,8 @@ final class Desk: ObservableObject {
   @Published var awaitingReview = false
   @Published var confirming = false
   private var learningBase=""
-  @Published var draft = ""
+  private let draftBuffer = DraftBuffer()
+  var draft: String { get { draftBuffer.text } set { draftBuffer.text=newValue } }
   @Published private(set) var readingChoices: [ReadingChoice] = []
   private struct ReadingEdit {
     let id: UUID, from: String, to: String, inDraft: Bool, choices: [ReadingChoice]
@@ -111,7 +124,7 @@ final class Desk: ObservableObject {
   @Published var insertedEarlier = false
   @Published var openShortcut = false
   @Published var keyConnected = false
-  @Published private(set) var activeTrigger:Trigger = .shortcut
+  @Published private(set) var activeTrigger:Trigger = .command
   var usingBackupKey:Bool { keyConnected && activeTrigger != options.trigger }
   let models: ModelShelf
   private struct PendingReview {
@@ -157,7 +170,7 @@ final class Desk: ObservableObject {
   @Published var message = ""
   @Published var playing: UUID?
   var onChange: (() -> Void)?, openPage: ((Page) -> Void)?, onMenu: (() -> Void)?
-  var openGuide: (() -> Void)?
+  var openGuide: (() -> Void)?, uninstall: (() -> Void)?
   private var noSpeechTimer:DispatchWorkItem?, tailTimer:DispatchWorkItem?
   private var skipDelivery = false, afterStop: (() -> Void)?
   var reviewBeforeStopping: Bool { runOptions.reviewFirst }
@@ -300,7 +313,7 @@ final class Desk: ObservableObject {
     case .ask:
       lastPrompt = (access, ProcessInfo.processInfo.systemUptime)
       if access == .microphone { requestingMic = true }
-      else { prompted.insert(access); UserDefaults.standard.set(prompted.map(\.rawValue), forKey: Self.promptKey) }
+      else { prompted.insert(access) }
       access.askSystem { [weak self] in self?.requestingMic = false; self?.refresh(retryKeyboard: true) }
     case .settings:
       if let (a,t) = lastPrompt, a == access, ProcessInfo.processInfo.systemUptime - t <= NSEvent.doubleClickInterval { return }
@@ -396,7 +409,7 @@ final class Desk: ObservableObject {
     skipDelivery = false
     tag = id
     clearCopyFeedback()
-    fadeMark?.cancel(); lastMark=nil; liveMark=nil; readingChoices = []; readingEdit = nil
+    fadeMark?.cancel(); lastMark=nil; liveMark=nil
     runOptions = options
     runTerms = terms.filter(policy.uses)
     destination = target.map { String($0.pid) } ?? "workspace"
@@ -407,7 +420,6 @@ final class Desk: ObservableObject {
     let learned = options.learning ? memories : []
     stable = ""
     tail = ""
-    raw = ""
     level = 0
     meterHistory = Array(repeating: 0, count: 9)
     seconds = 0

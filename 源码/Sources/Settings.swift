@@ -21,7 +21,9 @@ struct SettingsPane: View {
           switch section {
           case .dictate: dictate(wide: geo.size.width >= 510)
           case .capsule: EmptyView()
-          case .updates: UpdatePane(d:d, updates:d.updates)
+          case .updates:
+            UpdatePane(d:d, updates:d.updates)
+            UninstallRow(d:d,updates:d.updates,models:d.models)
           case .model: ModelPane(d:d, shelf:d.models)
           case .privacy: privacy
           }
@@ -153,4 +155,11 @@ struct SettingsPane: View {
       }.frame(width:Layout.controlRail,alignment:.trailing)
     }.frame(minHeight:Layout.row)
   }
+}
+
+private struct UninstallRow: View {
+  @ObservedObject var d:Desk
+  @ObservedObject var updates:AppUpdates
+  @ObservedObject var models:ModelShelf
+  var body:some View { HStack {Spacer();Button("卸载如流…"){d.uninstall?()}.deskAction().disabled(!d.allowsUpdateRestart || updates.busy)} }
 }

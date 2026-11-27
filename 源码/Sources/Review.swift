@@ -10,7 +10,7 @@ struct ReviewCard: View {
   var body: some View {
     Surface(spacing: 10) {
       HStack(spacing: 8) {
-        PanelTitle(title: live ? "实时转写" : (d.awaitingReview ? "待审阅" : d.editing ? "修改定稿" : "本次定稿"))
+        PanelTitle(title: d.awaitingReview ? "待审阅" : d.editing ? "修改定稿" : "最近定稿")
         Spacer()
         if d.confirming {
           ProgressView().controlSize(.small)
@@ -26,7 +26,7 @@ struct ReviewCard: View {
             }
           }
         }
-        if !d.confirming && (live || !d.last.isEmpty) {
+        if !d.confirming && !live && !d.last.isEmpty {
           Button {
             d.copyCurrent()
           } label: {
@@ -37,26 +37,16 @@ struct ReviewCard: View {
         }
       }.frame(minHeight: 30)
       if let r=d.rehearing, r.origin == .dictate, !r.inCapsule { RehearingInline(d:d,review:r) }
-      if live {
-        if d.stable.isEmpty && d.tail.isEmpty {
-          Text(d.phase == .finish ? "正在校对…" : "正在听…").foregroundStyle(.secondary)
-        } else if let before=d.inkBefore(d.stable+d.tail) {
-          Text(ReviewRuns.styled(before,d.stable+d.tail,tail:false))
-        } else {
-          Text(
-            "\(Text(d.stable).foregroundColor(.primary))\(Text(d.tail).foregroundColor(.secondary))"
-          )
-        }
-      } else if d.last.isEmpty {
+      if d.last.isEmpty {
         Label("听写结束后，在这里查看或修改文字。", systemImage: "text.cursor").font(.callout).foregroundStyle(
           .secondary
         ).frame(maxWidth: .infinity, minHeight: 68)
       } else if let id=d.lastID {
-        PassageEditor(id:id,value:d.reviewText,label:"本次定稿，可编辑",editable:!d.confirming,editing:d.editing && !d.panelEditing,
+        PassageEditor(id:id,value:d.reviewText,label:"本次定稿，可编辑",editable:!live && !d.confirming,editing:d.editing && !d.panelEditing,
           begin:{d.editLast(open:false);return d.editing && !d.panelEditing},change:{d.draft=$0},save:{d.confirmReview()},cancel:{d.cancelEdit()})
           .padding(4).frame(height:d.editing ? editorHeight : min(editorHeight,max(58,CapsuleMetrics.inkHeight(d.reviewText,width:490,font:.systemFont(ofSize:15))+14)))
           .background(Color.inkMint.opacity(d.editing ? 0.055 : 0),in:RoundedRectangle(cornerRadius:9)).help("点按文字修改")
-        candidates
+        if !live { candidates }
         if compare || (d.showEdits && d.raw != d.last && !d.editing) {
           Text(ReviewRuns.styled(d.draft != d.last ? d.last : d.raw,d.reviewText,tail:false)).font(.callout).lineSpacing(3)
         }
@@ -216,5 +206,41 @@ struct ModelPane: View {
     }.alert("移除这个模型？",isPresented:Binding(get:{removing != nil},set:{if !$0 { removing=nil }}),presenting:removing) { model in
       Button("取消",role:.cancel) {}; Button("移除",role:.destructive) { if d.activeModel != model { shelf.remove(model) } }
     } message:{ model in Text("将删除“"+model.title+"”的下载文件。听写记录不变，之后可重新安装。") }
+  }
+}
+
+// Keep streaming text in a fixed-height surface. The previous finalized passage stays
+// mounted below, with its own selection, undo state and scroll position.
+private struct StreamTail: View {
+  let d: Desk
+  var body: some View {
+    let text = String((d.stable + d.tail).suffix(240))
+    if let before = d.inkBefore(text) { Text(ReviewRuns.styled(before,text)) }
+    else { Text(text.isEmpty ? "正在听…" : text).foregroundStyle(text.isEmpty ? .secondary : .primary) }
+  }
+}
+struct LiveLine: View {
+  @ObservedObject var d: Desk
+  var body: some View {
+    HStack(alignment:.top,spacing:9) {
+      Image(systemName:"quote.opening").font(.caption).foregroundStyle(Color.inkMint).padding(.top,3)
+      if d.recordingBusy {
+        ScrollViewReader { reader in
+          ScrollView { VStack(alignment:.leading,spacing:0) { StreamTail(d:d); Color.clear.frame(height:1).id("end") }.frame(maxWidth:.infinity,alignment:.leading) }
+            .scrollIndicators(.hidden).onChange(of:d.stable+d.tail,initial:true) { _,_ in reader.scrollTo("end",anchor:.bottom) }
+        }
+      } else { Text("说话时，文字会显示在这里。").foregroundStyle(.secondary); Spacer() }
+    }.font(.body).frame(maxWidth:.infinity,minHeight:32,maxHeight:32,alignment:.topLeading)
+  }
+}
+struct CaptureWave: View {
+  let live: LiveCapture, active: Bool
+  var body: some View { WaveMark(power:live.level,active:active,history:live.meterHistory) }
+}
+struct CaptureCaption: View {
+  @ObservedObject var d:Desk
+  var body:some View {
+    Text(d.phase == .listen ? clockText(d.seconds) + (d.handsFree ? " · 再按一次结束" : "") : d.options.reviewFirst ? "结束后审阅，确认后定稿。" : d.options.autoInsert ? "结束后，文字会输入到光标处。" : "结束后，在悬浮窗复制文字。")
+      .font(.callout).foregroundStyle(.secondary).monospacedDigit()
   }
 }

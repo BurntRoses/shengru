@@ -51,7 +51,11 @@ struct PanelStudio: View {
         }
         Divider(); segment("着色", $d.options.appearance.wash, CapsuleWash.allCases) { $0.rawValue }
         segment("材质", $d.options.appearance.material, materials) { $0 == .solid ? "不透明" : $0.rawValue }
-        slider("底色浓度", $d.options.appearance.opacity,0.45...1,0.01,"%")
+        if look.material == .solid {
+          slider("底色浓度", $d.options.appearance.opacity,0...1,0.01,"%")
+        } else {
+          slider("通透度", Binding(get:{1-d.options.appearance.opacity},set:{d.options.appearance.opacity=1-$0}),0...1,0.01,"%")
+        }
       }
       fold("大小与位置", symbol:"arrow.up.left.and.arrow.down.right", summary:"\(Int(look.width)) pt · \(look.position.rawValue)", isOpen:$dimensions) {
         segment("位置", $d.options.appearance.position, Placement.allCases) { $0.rawValue }
@@ -107,7 +111,7 @@ private struct PreviewPaper: View {
     Canvas { ctx,size in
       let w=size.width,h=size.height,rect=CGRect(origin:.zero,size:size)
       ctx.fill(Path(rect),with:.linearGradient(Gradient(colors:[a.base,b.edge]),startPoint:.zero,endPoint:CGPoint(x:w,y:h)))
-      for i in 0..<2 { let k=CGFloat(i)*0.28; var p=Path(); p.move(to:CGPoint(x:0,y:h*(0.80+k))); p.addCurve(to:CGPoint(x:w,y:h*(0.16+k)),control1:CGPoint(x:w*0.34,y:h*(0.1+k)),control2:CGPoint(x:w*0.67,y:h*(0.97+k))); p.addLine(to:CGPoint(x:w,y:h));p.addLine(to:CGPoint(x:0,y:h));p.closeSubpath();ctx.fill(p,with:.color(i == 0 ? a.bloom.opacity(0.42) : b.swatch.opacity(0.23))) }
+      for i in 0..<2 { let k=CGFloat(i)*0.28; var p=Path(); p.move(to:CGPoint(x:0,y:h*(0.80+k))); p.addCurve(to:CGPoint(x:w,y:h*(0.16+k)),control1:CGPoint(x:w*0.34,y:h*(0.1+k)),control2:CGPoint(x:w*0.67,y:h*(0.97+k))); p.addLine(to:CGPoint(x:w,y:h));p.addLine(to:CGPoint(x:0,y:h));p.closeSubpath();ctx.fill(p,with:.color(i == 0 ? CapsulePalette.apricot.inks(dark ? .dark:.light).swatch.opacity(0.81) : CapsulePalette.coast.inks(dark ? .dark:.light).swatch.opacity(0.87))) }
     }.accessibilityHidden(true)
   }
 }

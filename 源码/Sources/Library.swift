@@ -28,7 +28,7 @@ enum Trigger: String, CaseIterable, Codable {
 }
 struct Options: Codable, Equatable {
   var level: EditLevel = .natural
-  var trigger: Trigger = .shortcut
+  var trigger: Trigger = .command
   var shortToggle = true
   var autoInsert = true
   var keepText = true

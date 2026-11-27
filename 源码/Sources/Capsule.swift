@@ -10,7 +10,6 @@ extension Color {
           ? NSColor(srgbRed: 0.43, green: 0.87, blue: 0.73, alpha: 1)
           : NSColor(srgbRed: 0.045, green: 0.42, blue: 0.335, alpha: 1)
       }))
-  static let deskSurface = Color(nsColor: .controlBackgroundColor)
 }
 struct WaveMark: View {
   var power: Double
@@ -185,13 +184,27 @@ struct CapsuleView: View {
   private var inks: CapsulePalette.Inks { p.palette.inks(scheme) }
   @ViewBuilder func surface(_ rr: RoundedRectangle) -> some View {
     let solid = opaque || contrast == .increased || p.material == .solid
+    let base = scheme == .dark ? Color(white:0.135) : Color(white:0.97)
+    let pigment = CapsulePaint(inks:inks,wash:p.wash,moves:p.animate && p.light && !reduceMotion && !opaque && (sample || desk.phase != .idle || desk.previewing))
     ZStack {
-      if solid { rr.fill(scheme == .dark ? Color(white:0.14) : Color(white:0.97)) }
-      else if #available(macOS 26, *), p.material == .glass {
-        Color.clear.glassEffect(.regular.tint(inks.base.opacity(0.23)), in:rr)
-      } else { Frost().clipShape(rr) }
-      CapsulePaint(inks:inks,wash:p.wash).opacity(solid ? p.opacity : 0.38 + 0.49 * p.opacity).clipShape(rr)
-    }.accessibilityHidden(true)
+      if solid {
+        rr.fill(base)
+        pigment.opacity(p.opacity)
+      } else if #available(macOS 26,*), p.material == .glass {
+        // Clear glass transmits the scene; pigment and edge treatment never fade the text.
+        Color.clear.glassEffect(.clear,in:rr)
+          .mask { rr.fill(.white.opacity(0.14+0.34*p.opacity)).overlay { rr.strokeBorder(.white,lineWidth:2) } }
+        rr.fill(base.opacity((scheme == .dark ? 0.28 : 0.24) + 0.17*p.opacity))
+        pigment.opacity(0.48*p.opacity)
+        rr.strokeBorder(LinearGradient(colors:[.white.opacity(0.86),.white.opacity(0.09),inks.accent.opacity(0.26),.white.opacity(0.70)],startPoint:.topLeading,endPoint:.bottomTrailing),lineWidth:1.15)
+      } else {
+        if sample { rr.fill(.regularMaterial) } else { Frost() }
+        let porcelain = scheme == .dark ? Color(red:0.24,green:0.28,blue:0.29) : Color(white:0.97)
+        rr.fill(porcelain.opacity(0.55 + 0.38*p.opacity))
+        pigment.opacity(0.34*p.opacity)
+        rr.strokeBorder((scheme == .dark ? Color.white:Color.black).opacity(0.08),lineWidth:0.5)
+      }
+    }.clipShape(rr).allowsHitTesting(false).accessibilityHidden(true)
   }
   var body: some View {
     let rr = RoundedRectangle(cornerRadius: p.radius, style: .continuous)
@@ -290,6 +303,8 @@ struct CapsuleView: View {
             rr.strokeBorder(LinearGradient(colors:[.clear,inks.accent.opacity(0.32),.white.opacity(0.62),.clear],startPoint:UnitPoint(x:pos*1.7-0.7,y:0),endPoint:UnitPoint(x:pos*1.7,y:1)),lineWidth:1)
           }.allowsHitTesting(false).accessibilityHidden(true)
         }
+      }.overlay(alignment:.topTrailing) {
+        if !sample { UpdateDot(updates:desk.updates).padding(.top,4).padding(.trailing,15) }
       }.environment(\.colorScheme,scheme).padding(CapsuleMetrics.outer).focusEffectDisabled()
       .accessibilityElement(children: .contain)
       .onHover { inside in if !sample { desk.hoverResult(inside) } }

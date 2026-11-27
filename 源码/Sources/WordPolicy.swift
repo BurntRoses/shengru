@@ -6,7 +6,7 @@ struct WordPolicy: Codable, Equatable {
   private typealias G = BuiltinVocabulary.Group
   private static let industry = Set(G.allCases.filter(\.industry).map(\.rawValue))
   var disabled = Set<String>(), hidden = Set<String>(), blocked = [String]()
-  private var shelves: [String: Bool] = [WordSubject.technology.rawValue: false]
+  private var shelves: [String: Bool] = [:]
   private var knownPacks = Set(G.allCases.map(\.rawValue))
   init() {}
   private static func inherited(known: Set<String>, off: Set<String>) -> Set<String> {

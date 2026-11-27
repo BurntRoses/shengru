@@ -131,7 +131,7 @@ struct WorkspaceView: View {
     VStack(alignment: compact ? .center : .leading, spacing: 0) {
       HStack(spacing: 9) {
         BrandBadge(size: Layout.sideRow)
-        if !compact { Text("语音输入").font(.system(size: 16, weight: .semibold)) }
+        if !compact { Text("如流").font(.system(size: 16, weight: .semibold)) }
       }.frame(height: Layout.navRow).padding(.horizontal, compact ? 0 : 8)
       VStack(spacing: 4) {
         ForEach(Page.allCases, id: \.self) { p in
@@ -141,6 +141,7 @@ struct WorkspaceView: View {
           } label: {
             HStack(spacing: 10) {
               Image(systemName: p.icon).font(.system(size: 15, weight: .medium)).frame(width: 20)
+                .overlay(alignment:.topTrailing){if p == .settings {UpdateDot(updates:d.updates).offset(x:3,y:-2)}}
               if !compact {
                 Text(p.rawValue).font(.system(size: 13, weight: chosen ? .semibold : .regular))
                 Spacer(minLength: 0)
@@ -205,25 +206,18 @@ struct WorkspaceView: View {
         }
       case .settings:
         SectionTabs(title:"设置类别", items:SettingsSection.allCases, selected:$d.settingsSection)
+          .overlay(alignment:.topTrailing){UpdateDot(updates:d.updates).offset(x:2,y:2)}
       case .dictate: EmptyView()
       }
     }.frame(minHeight: 38)
   }
-  private var live: Bool { d.phase == .listen || d.phase == .finish }
   private var dictate: some View {
     GeometryReader { space in
-      let foreground = d.recordingBusy || !d.last.isEmpty
-      let review = ReviewCard(d: d, editorHeight: min(300, max(126, space.size.height * 0.51)))
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
-          if foreground { review }
-          if !d.editing && !d.awaitingReview && !d.confirming {
-            dictateCard
-            if !d.allowMic || !d.keyConnected || d.usingBackupKey || (d.options.autoInsert && !d.allowInsert) {
-              permissionShortcut
-            }
-          }
-          if !foreground { review }
+          dictateCard
+          if !d.allowMic || !d.keyConnected || d.usingBackupKey || (d.options.autoInsert && !d.allowInsert) { permissionShortcut }
+          ReviewCard(d:d, editorHeight:min(280,max(116,space.size.height * 0.43)))
         }.padding(.bottom, 4)
       }
     }
@@ -237,25 +231,18 @@ struct WorkspaceView: View {
           Text(d.activeTrigger.rawValue).font(
             .system(size: 30, weight: .semibold, design: .rounded)
           ).fixedSize()
-          Text(
-            d.phase == .listen
-              ? clockText(d.seconds) + (d.handsFree ? " · 再按一次结束" : "")
-              : d.options.reviewFirst
-                ? "结束后审阅，确认后定稿。" : (d.options.autoInsert ? "结束后，文字会输入到光标处。" : "结束后，在悬浮窗复制文字。")
-          )
-          .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+          CaptureCaption(d:d)
         }
         Spacer(minLength: 0)
         Group {
           if d.options.appearance.waveform {
-            WaveMark(
-              power: d.level, active: d.phase == .listen && d.options.appearance.animate && !reduceMotion,
-              history: d.meterHistory)
+            CaptureWave(live:d.live, active:d.phase == .listen && d.options.appearance.animate && !reduceMotion)
           } else {
             Image(systemName: "mic").font(.system(size: 31)).foregroundStyle(Color.inkMint)
           }
         }.frame(width: 68, height: 58).padding(.trailing, 6)
       }
+      LiveLine(d:d)
       HStack(spacing: 10) {
         Button {
           d.toggle()
@@ -265,7 +252,7 @@ struct WorkspaceView: View {
             systemImage: d.phase == .listen ? "stop.fill" : "mic.fill"
           )
           .font(.system(size: 13, weight: .semibold)).frame(minWidth: 76)
-        }.deskAction(primary: true, large: true).disabled(d.phase == .finish || !d.ready)
+        }.deskAction(primary: true, large: true).disabled(d.phase == .finish || !d.ready || d.editing || d.awaitingReview || d.confirming)
         Spacer(minLength: 4)
         Text("整理方式").font(.callout).foregroundStyle(.secondary)
         Picker("整理方式", selection: $d.options.level) {

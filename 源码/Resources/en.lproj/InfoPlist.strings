@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "PhraseFlow";
+"CFBundleName" = "PhraseFlow";
+"NSMicrophoneUsageDescription" = "PhraseFlow uses the microphone when you start dictation. Speech is transcribed on this Mac.";

@@ -2,20 +2,19 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
   private var statusItem: NSStatusItem!, desk: Desk!, capsule: CapsuleController!,
     window: NSWindow?, refreshTimer: Timer?, watches: [NSObjectProtocol] = []
   private let menu = NSMenu(), launcher = WindowShortcut()
   private var welcome: NSWindow?
-  private var finishingForQuit = false
+  private var finishingForQuit = false, removingApp = false, showHighlights = false
+  private var releaseWindow:NSWindow?
   private var nextShortcutAttempt = Date.distantPast
   func applicationDidFinishLaunching(_ notification: Notification) {
     let bundle=Bundle.main.bundleURL.standardizedFileURL
-    // Grants bound to a translocated or mounted copy are lost when the user later installs it.
-    if Self.needsInstall(bundle,readOnly:(try? bundle.resourceValues(forKeys:[.volumeIsReadOnlyKey]).volumeIsReadOnly)==true) {
-      let alert=NSAlert();alert.messageText="先将语音输入拖入“应用程序”"
-      alert.informativeText="从“应用程序”打开后，再允许麦克风和辅助功能。";alert.addButton(withTitle:"好")
-      NSApp.activate();alert.runModal();NSApp.terminate(nil);return
+    guard Installation.prepare(bundle) else {
+      // The installer may be launching the installed copy asynchronously.
+      if !Installation.handingOff { NSApp.terminate(nil) };return
     }
     do {
       let library = try Library(root: Library.home)
@@ -23,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
       desk = Desk(library, model: res.appendingPathComponent("Speech"))
     } catch {
       let alert = NSAlert()
-      alert.messageText = "无法打开语音输入"
+      alert.messageText = "无法打开如流"
       alert.informativeText = error.localizedDescription
       alert.runModal()
       NSApp.terminate(nil)
@@ -36,18 +35,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     desk.openPage = { [weak self] p in self?.open(p) }
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     desk.openGuide = { [weak self] in self?.onboard() }
+    desk.uninstall = { [weak self] in self?.removeInstallation() }
     launcher.action = { [weak self] in self?.open(.dictate) }
     desk.openShortcut = launcher.install()
     menu.autoenablesItems = false
     menu.delegate = self
     statusItem.menu = menu
-    statusItem.button?.toolTip = "语音输入 · 听写菜单"
-    statusItem.button?.setAccessibilityIdentifier("ShengruStatusItem")
+    statusItem.button?.toolTip = "如流 · 听写菜单"
+    statusItem.button?.setAccessibilityIdentifier("PhraseFlowStatusItem")
     statusIcon()
     desk.start()
     let nc = NSWorkspace.shared.notificationCenter
     watches.append(nc.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] note in
-      guard let d=self?.desk,d.options.autoInsert,let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {return}; InputTarget.prepareEditor(app)
+      MainActor.assumeIsolated {guard let d=self?.desk,d.options.autoInsert,let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {return}; InputTarget.prepareEditor(app)}
     })
     for n in [
       NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification,
@@ -55,32 +55,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     ] {
       watches.append(
         nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in
-          self?.desk.interruptCapture()
+          MainActor.assumeIsolated {self?.desk.interruptCapture()}
         })
     }
     watches.append(
       nc.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) {
         [weak self] _ in
-        guard let d = self?.desk else { return }
-        d.reconnectKeyboard()
+        MainActor.assumeIsolated {self?.desk.reconnectKeyboard()}
       })
     refreshTimer = Timer.scheduledTimer(withTimeInterval:2, repeats:true) { [weak self] _ in
-      guard let self else { return }; self.desk.refresh()
+      MainActor.assumeIsolated {
+      guard let self else { return }; self.desk.refresh(); self.presentReleaseIfNeeded()
       if !self.desk.openShortcut && Date() >= self.nextShortcutAttempt {
         self.nextShortcutAttempt = Date().addingTimeInterval(15)
         if self.launcher.install() { self.desk.openShortcut = true }
       }
+      }
     }
+    showHighlights=desk.updates.needsHighlights(firstUse:!desk.options.welcomed)
     open(.dictate)
-  }
-  static func needsInstall(_ url:URL,readOnly:Bool)->Bool {
-    let path=url.standardizedFileURL.path
-    return (path.hasPrefix("/Volumes/") && readOnly) || ((path.hasPrefix("/private/var/folders/") || path.hasPrefix("/var/folders/")) && url.pathComponents.contains("AppTranslocation"))
+    desk.updates.check(quiet:true)
   }
   private func installMenu() {
     let main=NSMenu(); let appItem=NSMenuItem(); main.addItem(appItem); let a=NSMenu(); appItem.submenu=a
     let pref=a.addItem(withTitle:"设置…",action:#selector(settings),keyEquivalent:","); pref.target=self
-    a.addItem(.separator()); a.addItem(withTitle:"隐藏语音输入",action:#selector(NSApplication.hide(_:)),keyEquivalent:"h"); a.addItem(withTitle:"退出语音输入",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
+    a.addItem(.separator()); a.addItem(withTitle:"隐藏如流",action:#selector(NSApplication.hide(_:)),keyEquivalent:"h"); a.addItem(withTitle:"退出如流",action:#selector(NSApplication.terminate(_:)),keyEquivalent:"q")
     let editItem=NSMenuItem(); main.addItem(editItem); let e=NSMenu(title:"编辑"); editItem.submenu=e
     for (label,selector,key) in [("撤销","undo:","z"),("重做","redo:","Z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")] { e.addItem(withTitle:label,action:Selector(selector),keyEquivalent:key) }
     let win=NSMenuItem(); main.addItem(win); let w=NSMenu(title:"窗口"); win.submenu=w
@@ -94,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     guard let button = statusItem?.button else { return }
     button.image = listening ? BrandArtwork.menuRecording : BrandArtwork.menuIdle
     button.contentTintColor = listening ? .systemGreen : nil
-    button.setAccessibilityLabel(listening ? "语音输入，正在听写" : "语音输入")
+    button.setAccessibilityLabel(listening ? "如流，正在听写" : "如流")
   }
   private func add(
     _ title: String, _ action: Selector?, _ symbol: String? = nil, _ key: String = ""
@@ -131,9 +130,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
     item.submenu = levels
     menu.addItem(.separator())
+    if desk.updates.hasBadge { _ = add("有新版本…",#selector(updatesPage),"bell.badge") }
     _ = add("设置…", #selector(settings), "gearshape", ",")
     menu.addItem(.separator())
-    _ = add("退出语音输入", #selector(quit), nil, "q")
+    _ = add("退出如流", #selector(quit), nil, "q")
   }
   @objc func toggle() { desk.toggle() }
   @objc func cancel() { desk.end(cancel: true) }
@@ -145,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
   @objc func copyLast() { if !desk.recordingBusy && !desk.editing && !desk.awaitingReview { _=desk.copyCurrent() } }
   @objc func history() { open(.history) }
   @objc func words() { open(.terms) }
+  @objc func updatesPage() { desk.settingsSection = .updates; open(.settings) }
   @objc func settings() { open(.settings) }
   @objc func mode(_ i: NSMenuItem) {
     if let s = i.representedObject as? String, let l = EditLevel(rawValue: s) {
@@ -170,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         contentRect: NSRect(origin: .zero, size: Layout.window),
         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
         backing: .buffered, defer: false)
-      w.title = "语音输入"
+      w.title = "如流"
       w.titleVisibility = .hidden
       w.titlebarAppearsTransparent = true
       w.isReleasedWhenClosed = false
@@ -192,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     let w = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 460, height: 365), styleMask: [.titled, .closable],
       backing: .buffered, defer: false)
-    w.title = "设置语音输入"
+    w.title = "如流使用引导"
     w.collectionBehavior = [.moveToActiveSpace,.fullScreenAuxiliary]
     w.isReleasedWhenClosed = false
     let v = WelcomeView(d: desk) { [weak self] in
@@ -208,8 +209,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     welcome = w
     Self.present(w)
   }
+  private func presentReleaseIfNeeded() {
+    guard let w=window, NSApp.isActive,w.isKeyWindow,w.isVisible,w.attachedSheet == nil,
+          welcome?.isVisible != true,desk.options.welcomed,desk.allowsUpdateRestart,desk.phase == .idle,
+          showHighlights || (desk.updates.announceOffer && desk.updates.hasBadge) else {return}
+    let highlights=showHighlights
+    let sheet=NSWindow(contentRect:NSRect(x:0,y:0,width:445,height:240),styleMask:[.titled],backing:.buffered,defer:false)
+    sheet.title=highlights ? "新版特性" : "如流更新"; sheet.isReleasedWhenClosed=false
+    let view=ReleaseSheet(d:desk,updates:desk.updates,highlights:highlights) { [weak w,weak sheet] in if let sheet { w?.endSheet(sheet) } }
+    let host=NSHostingView(rootView:view);sheet.contentView=host; sheet.setContentSize(host.fittingSize);releaseWindow=sheet
+    if highlights {showHighlights=false;desk.updates.sawHighlights()} else {desk.updates.announceOffer=false}
+    w.beginSheet(sheet){[weak self] _ in self?.releaseWindow=nil}
+  }
+  private func removeInstallation() {
+    guard desk.allowsUpdateRestart,!desk.updates.busy else { return }
+    let a=NSAlert();a.messageText="卸载如流？";a.informativeText="仅移除应用会保留听写记录和设置，重新安装后可以继续使用。"
+    a.addButton(withTitle:"取消");a.addButton(withTitle:"仅移除应用");a.addButton(withTitle:"连同本机资料删除…")
+    let choice=a.runModal(); guard choice == .alertSecondButtonReturn || choice == .alertThirdButtonReturn else {return}
+    let erase=choice == .alertThirdButtonReturn
+    if erase {
+      let b=NSAlert();b.alertStyle = .warning;b.messageText="永久删除本机资料并卸载？";b.informativeText="所有听写文字、录音、自建词库、修改记忆、已装模型和设置都将删除，无法恢复。";b.addButton(withTitle:"取消");b.addButton(withTitle:"删除资料并卸载");guard b.runModal() == .alertSecondButtonReturn else {return}
+    }
+    let bundle=Bundle.main.bundleURL
+    guard Installation.installed(bundle), Bundle.main.bundleIdentifier == Installation.id else {return}
+    do {try FileManager.default.trashItem(at:bundle,resultingItemURL:nil)} catch {NSAlert(error:error).runModal();return}
+    removingApp=true;refreshTimer?.invalidate();desk.shutdown()
+    if erase { do {try Installation.eraseData(library:desk.lib.root,home:FileManager.default.homeDirectoryForCurrentUser,domain:Installation.id,defaults:.standard)} catch {NSAlert(error:error).runModal()} }
+    NSApp.terminate(nil)
+  }
   func windowWillClose(_ notification: Notification) { desk?.stopAudio(); desk?.previewing = false }
   func applicationShouldTerminate(_ sender:NSApplication) -> NSApplication.TerminateReply {
+    if removingApp { return .terminateNow }
     if finishingForQuit { return .terminateLater }
     if let d = desk, d.recordingBusy {
       if d.reviewBeforeStopping {
@@ -234,47 +264,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     return true
   }
   func applicationWillTerminate(_ notification: Notification) {
-    desk?.shutdown()
+    if !removingApp {desk?.shutdown()}
     refreshTimer?.invalidate()
     for t in watches { NSWorkspace.shared.notificationCenter.removeObserver(t) }
   }
 }
-struct WelcomeView: View {
-  @ObservedObject var d: Desk
-  var complete: () -> Void
-  @LocalState private var step = 0
-  var body: some View {
-    VStack(alignment:.leading,spacing:16) {
-      HStack(spacing:12) {
-        BrandBadge(size: 48)
-        VStack(alignment:.leading,spacing:4) {
-          Text(step == 0 ? "在这台 Mac 上听写" : "选择要留下的内容").font(.title2.bold()).accessibilityAddTraits(.isHeader)
-          Text(step == 0 ? "语音在本机转成文字，断网也能用。" : "记录只保存在当前账户，可随时删除。").font(.callout).foregroundStyle(.secondary)
-        }; Spacer(); Text("\(step+1) / 2").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-      }
-      if step == 0 {
-        Surface(inset:14) { PermissionRows(d:d) }
-      } else {
-        Surface(inset:14) {
-          guideToggle("保存听写文字", $d.options.keepText); Divider(); guideToggle("保留听写录音", $d.options.keepAudio); Divider(); guideToggle("记住我确认的词语修改", $d.options.learning); Divider(); guideToggle("自动收录常用词", $d.options.collectFrequent).disabled(!d.options.keepText).help(FrequencyCopy.note); Divider(); guideToggle("关联连续听写", $d.options.linkContext).disabled(!d.options.keepText)
-        }
-
-      }
-      Spacer(minLength:0)
-      HStack {
-        if step == 1 { Button("上一步") { step = 0 }.deskAction() }
-        Spacer()
-        Button(step == 0 ? "下一步：记录偏好" : "开始使用") {
-          if step == 0 { step = 1 } else { complete() }
-        }.deskAction(primary:true,large:true).keyboardShortcut(.defaultAction)
-      }
-    }.padding(22).frame(width:460,height:380).tint(.inkMint).workspaceKeyboard()
-  }
-  private func guideToggle(_ label:String,_ flag: Binding<Bool>) -> some View { Toggle(isOn:flag) { Text(label).frame(maxWidth:.infinity,alignment:.leading) }.toggleStyle(.switch).frame(minHeight:36).keyCue() }
-
-}
 let app = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()

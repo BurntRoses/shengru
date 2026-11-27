@@ -17,10 +17,10 @@ if [ "$mode" = local ] && [ -z "$signer" ]; then
   fi
   [ -n "$signer" ] || echo '本机固定版：未配置开发签名。请保留这一份成品；不同构建不能沿用它的系统授权。' >&2
 fi
-here="$(cd "$(dirname "$0")" && pwd)"; out="${1:-$here/..}"; mkdir -p "$out"; out="$(cd "$out" && pwd)"; dest="$out/语音输入.app"
+here="$(cd "$(dirname "$0")" && pwd)"; out="${1:-$here/..}"; mkdir -p "$out"; out="$(cd "$out" && pwd)"; dest="$out/如流.app"
 case "$out/" in /Applications/*|"$HOME"/Applications/*) echo '请构建到工程目录，再从同一安装镜像安装。构建不会覆盖正在使用的应用。' >&2; exit 1;; esac
 stage="$(mktemp -d "$out/.voice-build.XXXXXX")"; trap 'rm -rf "$stage"' EXIT
-app="$stage/语音输入.app"; c="$app/Contents"; mkdir -p "$c/MacOS" "$c/Frameworks" "$c/Resources/Speech"; dep="$stage/deps"; mkdir -p "$dep/Frameworks" "$dep/Speech"
+app="$stage/如流.app"; c="$app/Contents"; mkdir -p "$c/MacOS" "$c/Frameworks" "$c/Resources/Speech"; dep="$stage/deps"; mkdir -p "$dep/Frameworks" "$dep/Speech"
 engine='sherpa-onnx-v2.0.3-osx-universal2-shared-no-tts-lib'; model='sherpa-onnx-x-asr-960ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05'
 fetch(){ curl --fail --location --silent --show-error --retry 2 "$1" -o "$2"; printf '%s  %s\n' "$3" "$2" | shasum -a 256 -c -; }
 # Reuse only identical upstream data. A stale installation or a re-signed framework is not a cache hit.
@@ -29,7 +29,7 @@ speech=''; libs=''
 if [ -n "${VOICE_RESOURCES:-}" ]; then
   speech="$VOICE_RESOURCES/Speech"; libs="$VOICE_RESOURCES/Frameworks"
 else
-  for base in "$here/../语音输入.app/Contents" '/Applications/语音输入.app/Contents'; do
+  for base in "$here/../如流.app/Contents" '/Applications/如流.app/Contents' '/Applications/语音输入.app/Contents'; do
     if [ -z "$speech" ] && match "$base/Resources/Speech" Speech; then speech="$base/Resources/Speech"; fi
     if [ -z "$libs" ] && match "$base/Frameworks" Frameworks; then libs="$base/Frameworks"; fi
   done
@@ -45,15 +45,15 @@ fi
 cp "$speech"/{encoder.onnx,decoder.onnx,joiner.onnx,tokens.txt,bpe.model} "$dep/Speech/"; cp "$libs"/{libonnxruntime.dylib,libsherpa-onnx-c-api.dylib} "$dep/Frameworks/"; cp -R "$here/Resources/Profiles" "$dep/Profiles"
 (cd "$dep"; shasum -a 256 -c "$here/Resources/Dependencies.sha256" >/dev/null)
 for table in places.tsv words.tsv readings.tsv collections.tsv catalog.tsv catalog-readings.tsv topics.tsv senses.tsv review.tsv classics.tsv classical-sounds.tsv 来源.txt; do [ -s "$here/Resources/Vocabulary/$table" ] || { echo "缺少内置词库：$table" >&2; exit 1; }; done
-mv "$dep/Profiles" "$c/Resources/"; mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"
+mv "$dep/Profiles" "$c/Resources/"; mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"; cp -R "$here/Resources/zh-Hans.lproj" "$here/Resources/en.lproj" "$c/Resources/"
 xcrun swiftc "$here/Sources/Brand.swift" "$here/Resources/Icon.swift" -o "$stage/DrawIcon"
-"$stage/DrawIcon" "$stage/Shengru.iconset"; iconutil -c icns "$stage/Shengru.iconset" -o "$c/Resources/Shengru.icns"
+"$stage/DrawIcon" "$stage/PhraseFlow.iconset"; iconutil -c icns "$stage/PhraseFlow.iconset" -o "$c/Resources/PhraseFlow.icns"
 # Pinned upstream binary, including its nested signatures and symlinks. An optional archive is still hashed.
 sparkle_sha=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
 archive="${SPARKLE_ARCHIVE:-$stage/Sparkle.tar.xz}"
 if [ -n "${SPARKLE_ARCHIVE:-}" ]; then printf '%s  %s\n' "$sparkle_sha" "$archive" | shasum -a256 -c -
 else fetch 'https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz' "$archive" "$sparkle_sha"; fi
-mkdir "$stage/sparkle"; tar -xf "$archive" -C "$stage/sparkle"; ditto "$stage/sparkle/Sparkle.framework" "$c/Frameworks/Sparkle.framework"
+mkdir "$stage/sparkle"; tar -xf "$archive" -C "$stage/sparkle" ./Sparkle.framework; ditto "$stage/sparkle/Sparkle.framework" "$c/Frameworks/Sparkle.framework"
 codesign --verify --all-architectures --strict --deep "$c/Frameworks/Sparkle.framework"
 for arch in arm64 x86_64; do
   xcrun clang -target "$arch-apple-macos14.0" -O2 -c "$here/Bridge/VoiceBridge.c" -o "$stage/$arch.o"

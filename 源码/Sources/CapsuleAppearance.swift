@@ -34,11 +34,11 @@ enum CapsuleWash: String, CaseIterable, Codable {
 }
 struct CapsuleAppearance: Codable, Equatable {
   var palette: CapsulePalette = .celadon
-  var wash: CapsuleWash = .slant
+  var wash: CapsuleWash = .halo
   static var defaultMaterial: MaterialChoice { if #available(macOS 26, *) { return .glass }; return .frost }
   var material = Self.defaultMaterial
   var position: Placement = .bottom
-  var width = 472.0, typeSize = 17.0, radius = 25.0, opacity = 0.92, hideDelay = 1.25
+  var width = 472.0, typeSize = 17.0, radius = 25.0, opacity = 0.62, hideDelay = 1.25
   var review = true, animate = true, waveform = true, light = true, shimmer = true
   init() {}
   init(from decoder: Decoder) throws {
@@ -48,21 +48,30 @@ struct CapsuleAppearance: Codable, Equatable {
     palette=read(.palette,palette); wash=read(.wash,wash); material=read(.material,material); position=read(.position,position)
     if #unavailable(macOS 26), material == .glass { material = .frost }
     width=number(.width,width,340...640); typeSize=number(.typeSize,typeSize,13...24); radius=number(.radius,radius,12...30)
-    opacity=number(.opacity,opacity,0.45...1); hideDelay=number(.hideDelay,hideDelay,0.5...3)
+    opacity=number(.opacity,opacity,0...1); hideDelay=number(.hideDelay,hideDelay,0.5...3)
     review=read(.review,review); animate=read(.animate,animate); waveform=read(.waveform,waveform); light=read(.light,light); shimmer=read(.shimmer,shimmer)
   }
 }
 struct CapsulePaint: View {
   let inks: CapsulePalette.Inks, wash: CapsuleWash
+  let moves: Bool
   var body: some View {
     switch wash {
     case .flat: inks.base
     case .slant: LinearGradient(colors:[inks.edge,inks.base,inks.bloom],startPoint:.topLeading,endPoint:.bottomTrailing)
-    case .halo: ZStack {
-      inks.base
-      EllipticalGradient(colors:[inks.edge,.clear],center:UnitPoint(x:0.82,y:0.85),startRadiusFraction:0.03,endRadiusFraction:0.82)
-      EllipticalGradient(colors:[inks.bloom,.clear],center:UnitPoint(x:0.18,y:0.04),startRadiusFraction:0.04,endRadiusFraction:0.65)
+    case .halo:
+      if moves {
+        TimelineView(.animation(minimumInterval:1/12)) { frame in
+          halo(frame.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:24) * (.pi/12))
+        }
+      } else { halo(0) }
     }
+  }
+  private func halo(_ t: Double) -> some View {
+    ZStack {
+      inks.base
+      EllipticalGradient(colors:[inks.swatch,inks.edge.opacity(0.82),.clear],center:UnitPoint(x:0.34+0.23*sin(t),y:0.98+0.08*cos(t)),startRadiusFraction:0.02,endRadiusFraction:0.82)
+      EllipticalGradient(colors:[inks.bloom,.clear],center:UnitPoint(x:0.70+0.21*cos(t),y:1.02-0.08*sin(t)),startRadiusFraction:0.05,endRadiusFraction:0.67)
     }
   }
 }
