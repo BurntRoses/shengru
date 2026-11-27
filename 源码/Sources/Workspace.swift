@@ -232,16 +232,16 @@ struct WorkspaceView: View {
     VStack(alignment: .leading, spacing: 16) {
       HStack(spacing: 14) {
         VStack(alignment: .leading, spacing: 6) {
-          Text(d.phase == .listen ? "正在听写" : d.phase == .finish ? "正在校对" : "按住说话")
+          Text(d.phase == .listen ? "正在听写" : d.phase == .finish ? "正在校对" : (d.options.shortToggle ? "按住或短按说话" : "按住说话"))
             .font(.callout.weight(.semibold)).foregroundStyle(Color.inkMint)
           Text(d.activeTrigger.rawValue).font(
             .system(size: 30, weight: .semibold, design: .rounded)
           ).fixedSize()
           Text(
             d.phase == .listen
-              ? clockText(d.seconds)
+              ? clockText(d.seconds) + (d.handsFree ? " · 再按一次结束" : "")
               : d.options.reviewFirst
-                ? "松开后审阅，确认后定稿。" : (d.options.autoInsert ? "松开后，文字会输入到光标处。" : "松开后，在悬浮窗复制文字。")
+                ? "结束后审阅，确认后定稿。" : (d.options.autoInsert ? "结束后，文字会输入到光标处。" : "结束后，在悬浮窗复制文字。")
           )
           .font(.callout).foregroundStyle(.secondary).monospacedDigit()
         }

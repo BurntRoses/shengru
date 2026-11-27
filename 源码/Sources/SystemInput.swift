@@ -75,10 +75,10 @@ final class Hotkey {
   private var held = false, key: Trigger = .shortcut
   private let registered = RegisteredKey(0x5352444B), escape = RegisteredKey(0x53524553)
   func duringDictation(_ active:Bool) {
-    if active && key.registered { _=escape.install(code:53,modifiers:0){[weak self] pressed in if pressed { self?.cancel?() }} }
+    if active && key.registered { _=escape.install(code:53,modifiers:0){[weak self] pressed,_ in if pressed { self?.cancel?() }} }
     else { escape.stop() }
   }
-  var down: (() -> Void)?, up: (() -> Void)?, cancel: (() -> Void)?, chord: (() -> Void)?
+  var down: ((TimeInterval) -> Void)?, up: ((TimeInterval) -> Void)?, cancel: (() -> Void)?, chord: (() -> Void)?
   var connected: Bool { registered.connected || (tap.map { CFMachPortIsValid($0) && CGEvent.tapIsEnabled(tap:$0) } ?? false) }
   func install(_ next: Trigger) {
     stop()
@@ -87,9 +87,9 @@ final class Hotkey {
     // focus. It does not need to observe the user's keyboard or request Input Monitoring.
     if next.registered {
       let mods=next == .shortcut ? UInt32(controlKey | shiftKey) : 0
-      if registered.install(code:UInt32(next.code),modifiers:mods,action:{[weak self] isDown in
+      if registered.install(code:UInt32(next.code),modifiers:mods,action:{[weak self] isDown,time in
         guard let self,self.held != isDown else { return }; self.held=isDown
-        if isDown { self.down?() } else { self.up?() }
+        if isDown { self.down?(time) } else { self.up?(time) }
       }) { return }
       // Do not advertise a busy chord as connected. The in-app microphone stays available.
       return
@@ -162,7 +162,7 @@ final class Hotkey {
       guard e.modifierFlags.intersection(conflicts).isEmpty else { return }
     }
     held = pressed
-    if pressed { down?() } else { up?() }
+    if pressed { down?(e.timestamp) } else { up?(e.timestamp) }
   }
   func stop() {
     registered.stop(); escape.stop()
@@ -182,10 +182,10 @@ final class Hotkey {
 // One distinct event signature per command. A busy chord never becomes an invisible local fallback.
 final class RegisteredKey {
   private let signature: OSType
-  private var reference:EventHotKeyRef?, handler:EventHandlerRef?, action:((Bool)->Void)?
+  private var reference:EventHotKeyRef?, handler:EventHandlerRef?, action:((Bool,TimeInterval)->Void)?
   var connected:Bool { reference != nil }
   init(_ signature:OSType) { self.signature=signature }
-  func install(code:UInt32,modifiers:UInt32,action:@escaping(Bool)->Void)->Bool {
+  func install(code:UInt32,modifiers:UInt32,action:@escaping(Bool,TimeInterval)->Void)->Bool {
     if connected {return true}; self.action=action
     let events=[kEventHotKeyPressed,kEventHotKeyReleased].map{EventTypeSpec(eventClass:OSType(kEventClassKeyboard),eventKind:UInt32($0))}
     let status=InstallEventHandler(GetApplicationEventTarget(),{ _,event,ctx in
@@ -193,7 +193,7 @@ final class RegisteredKey {
       let key=Unmanaged<RegisteredKey>.fromOpaque(ctx).takeUnretainedValue(); var id=EventHotKeyID(signature:0,id:0)
       guard GetEventParameter(event,EventParamName(kEventParamDirectObject),EventParamType(typeEventHotKeyID),nil,MemoryLayout<EventHotKeyID>.size,nil,&id)==noErr,
         id.signature==key.signature, id.id==1 else {return OSStatus(eventNotHandledErr)}
-      key.action?(GetEventKind(event)==UInt32(kEventHotKeyPressed)); return noErr
+      key.action?(GetEventKind(event)==UInt32(kEventHotKeyPressed),GetEventTime(event)); return noErr
     },events.count,events,Unmanaged.passUnretained(self).toOpaque(),&handler)
     guard status == noErr, RegisterEventHotKey(code,modifiers,EventHotKeyID(signature:signature,id:1),GetApplicationEventTarget(),UInt32(kEventHotKeyExclusive),&reference)==noErr else { stop(); return false }; return true
   }
@@ -203,7 +203,7 @@ final class RegisteredKey {
 final class WindowShortcut {
   private let key=RegisteredKey(0x53525657)
   var action:(()->Void)?
-  func install()->Bool { key.install(code:UInt32(kVK_Space),modifiers:UInt32(controlKey|optionKey)){[weak self] down in if down {self?.action?()} } }
+  func install()->Bool { key.install(code:UInt32(kVK_Space),modifiers:UInt32(controlKey|optionKey)){[weak self] down,_ in if down {self?.action?()} } }
 }
 struct InsertOutcome {
   var title: String
@@ -288,10 +288,15 @@ struct InputTarget: ReviewRecipient {
   let range: CFRange?
   enum Field { case unknown, nonText, editor, secure }
   private let field: Field
+  // Returning after an explicit review needs a known selection. An uninterrupted live
+  // take can also go to an identified editor that keeps its insertion point private.
   var editable: Bool {
-    guard field == .editor, window != nil, !inWebEditor || document != nil else { return false }
-    if let r = range { return r.location >= 0 && r.length >= 0 && (r.length == 0 || selectionProof != nil) }
-    return selectionMarker != nil
+    canInsertLive && (!inWebEditor || document != nil) && (range != nil || selectionMarker != nil)
+  }
+  var canInsertLive: Bool {
+    guard field == .editor, element != nil, window != nil else { return false }
+    if let r=range {return r.length == 0 || selectionProof != nil}
+    return selectionMarker != nil || fieldOnly
   }
   var protected: Bool { field == .secure }
   var recordingNotice: String? {
@@ -302,6 +307,60 @@ struct InputTarget: ReviewRecipient {
     }
   }
   private var selectionMarker: CFTypeRef? = nil
+  // Only a field that withholds its caret needs this temporary guard. Observe interaction
+  // during the take, not the contents of keystrokes. Never install a keyboard tap solely
+  // for this fallback; the Accessibility grant used for insertion also allows this monitor.
+  private final class Activity {
+    private var intactFlag=true, monitor:Any?, activation:NSObjectProtocol?
+    var intact:Bool {intactFlag && monitor != nil}
+    init(owner:pid_t, trigger:Trigger) {
+      activation=NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] note in
+        if let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,app.processIdentifier != owner {self?.intactFlag=false}
+      }
+      monitor=NSEvent.addGlobalMonitorForEvents(matching:[.keyDown,.leftMouseDown,.rightMouseDown,.otherMouseDown]) { [weak self] event in
+        self?.observe(event,shortcut:trigger)
+      }
+      if NSWorkspace.shared.frontmostApplication?.processIdentifier != owner {intactFlag=false}
+    }
+    func observe(_ event:NSEvent,shortcut:Trigger) {
+      // A registered hotkey may be consumed by Carbon or delivered to the monitor;
+      // neither start nor stop is an edit. A modifier alone does not generate keyDown.
+      if event.type == .keyDown, shortcut.registered, event.keyCode==shortcut.code, !event.isARepeat {
+        let mods=event.modifierFlags.intersection([.command,.option,.control,.shift])
+        if mods == (shortcut == .shortcut ? [.control,.shift] : []) {return}
+      }
+      intactFlag=false
+    }
+    func stop() {
+      if let monitor {NSEvent.removeMonitor(monitor);self.monitor=nil}
+      if let activation {NSWorkspace.shared.notificationCenter.removeObserver(activation);self.activation=nil}
+    }
+    deinit {stop()}
+  }
+  private var fieldOnly=false, unresolved=false, activity:Activity?, focusContainer:AXUIElement?
+  var waitingForEditor:Bool {unresolved}
+  func resolveEditor()->Self? {
+    guard unresolved, activity?.intact == true, let window,
+          NSWorkspace.shared.frontmostApplication?.processIdentifier==pid, Access.insertText.granted else {return nil}
+    var now=Self.focused(in:pid)
+    guard let w=now.window, CFEqual(w,window), activity?.intact == true else {return nil}
+    if now.fieldOnly {now.activity=activity}
+    if now.protected {return now}
+    guard now.canInsertLive, let editor=now.element else {return nil}
+    if let container=focusContainer, !CFEqual(container,window) {
+      var node:AXUIElement?=editor
+      for _ in 0..<64 {
+        guard let n=node else {return nil}; if CFEqual(n,container) {return now}
+        node=Self.elementAttr(n,kAXParentAttribute)
+      }
+      return nil
+    }
+    return now
+  }
+  mutating func guardLiveField(_ trigger:Trigger) {
+    if fieldOnly || unresolved {activity=Activity(owner:pid,trigger:trigger)}
+  }
+  func stopObserving() {activity?.stop()}
   fileprivate enum Document: Equatable {
     case file(Data), window(Data), web(AXUIElement,Data)
     static func ==(lhs:Self,rhs:Self)->Bool {
@@ -310,7 +369,8 @@ struct InputTarget: ReviewRecipient {
     }
   }
   fileprivate var document:Document? = nil
-  private var inWebEditor=false, selectionProof:Data?, originalLength:Int?
+  private var webArea:AXUIElement?, selectionProof:Data?, originalLength:Int?
+  private var inWebEditor:Bool {webArea != nil}
   private static func stamp(_ text:String)->Data {Data(SHA256.hash(data:Data(text.utf8)))}
   // AX screen coordinates start at the top left of the primary display; AppKit starts at the bottom left.
   var displayArea:NSRect? {
@@ -337,11 +397,17 @@ struct InputTarget: ReviewRecipient {
     var b = DarwinBoolean(false)
     return AXUIElementIsAttributeSettable(e, n as CFString, &b) == .success && b.boolValue
   }
-  private static func selected(_ e: AXUIElement) -> CFRange? {
-    guard let v = attr(e, kAXSelectedTextRangeAttribute), CFGetTypeID(v) == AXValueGetTypeID()
-    else { return nil }
+  private static func selection(_ e: AXUIElement) -> (range:CFRange?, unreported:Bool) {
+    var value:CFTypeRef?
+    let status=AXUIElementCopyAttributeValue(e,kAXSelectedTextRangeAttribute as CFString,&value)
+    guard status == .success, let v=value, CFGetTypeID(v)==AXValueGetTypeID() else {
+      return (nil,[.attributeUnsupported,.noValue,.notImplemented].contains(status))
+    }
     var r = CFRange()
-    return AXValueGetValue(v as! AXValue, .cfRange, &r) ? r : nil
+    guard AXValueGetValue(v as! AXValue,.cfRange,&r) else {return (nil,false)}
+    if (r.location == kCFNotFound || r.location == NSNotFound) && r.length==0 {return (nil,true)}
+    guard r.location>=0, r.location<NSNotFound, r.length>=0, r.length<NSNotFound-r.location else {return (nil,false)}
+    return (r,false)
   }
   private static var primed:(pid:pid_t,at:TimeInterval)?
   static func prepareEditor(_ app:NSRunningApplication) {
@@ -372,17 +438,31 @@ struct InputTarget: ReviewRecipient {
       guard let e=elementAttr(AXUIElementCreateSystemWide(),kAXFocusedUIElementAttribute) else {return nil}
       var owner:pid_t=0; return AXUIElementGetPid(e,&owner) == .success && owner==pid ? e : nil
     }
-    var el=granted ? (elementAttr(ax,kAXFocusedUIElementAttribute) ?? systemFocus()) : nil
-    if granted, el == nil || ["AXWindow","AXApplication","AXWebArea","AXGroup"].contains(el.flatMap{attr($0,kAXRoleAttribute) as? String} ?? "") {
+    let focusedWindow=granted ? elementAttr(ax,kAXFocusedWindowAttribute) : nil
+    func generic(_ e:AXUIElement?)->Bool {
+      guard let e,let role=attr(e,kAXRoleAttribute) as? String else {return true}
+      return [kAXWindowRole,kAXApplicationRole,"AXWebArea",kAXGroupRole,kAXScrollAreaRole].contains(role)
+    }
+    func focusedElement()->AXUIElement? {
+      let appFocus=elementAttr(ax,kAXFocusedUIElementAttribute)
+      if let appFocus,!generic(appFocus) {return appFocus}
+      // Some apps report a container here but name its actual field on the window or
+      // system focus channel. Never guess a descendant from a list of text fields.
+      let windowFocus=focusedWindow.flatMap{elementAttr($0,kAXFocusedUIElementAttribute)}
+      if let windowFocus,!generic(windowFocus) {return windowFocus}
+      return systemFocus() ?? appFocus ?? windowFocus
+    }
+    var el=granted ? focusedElement() : nil
+    if granted, generic(el) {
       // Some browser-based editors expose their accessibility tree only on first demand.
-      if canSet(ax,"AXManualAccessibility") { _=AXUIElementSetAttributeValue(ax,"AXManualAccessibility" as CFString,kCFBooleanTrue); el=elementAttr(ax,kAXFocusedUIElementAttribute) ?? systemFocus() ?? el }
+      if canSet(ax,"AXManualAccessibility") { _=AXUIElementSetAttributeValue(ax,"AXManualAccessibility" as CFString,kCFBooleanTrue); el=focusedElement() ?? el }
     }
     // Secure Event Input applies to the entire login session, not the focused field.
     // Inspect only metadata along the focus path before reading a caret, selection or text.
     // AppKit's canonical flag and the alternate spelling used by some editors are distinct.
     let keys = [kAXRoleAttribute, kAXSubroleAttribute, NSAccessibility.Attribute.containsProtectedContent.rawValue,
                 "AXProtectedContent", kAXParentAttribute] as CFArray
-    var node = el, editor: AXUIElement?, webRoot: AXUIElement?, secure = false, complete = false, nonText = false
+    var node = el, editor: AXUIElement?, webRoot: AXUIElement?, ownerWindow:AXUIElement?, secure = false, complete = false, nonText = false, textEntry=false
     for depth in 0..<64 {
       guard let e = node else { break }
       var reply: CFArray?
@@ -401,12 +481,16 @@ struct InputTarget: ReviewRecipient {
         return AXValueGetValue(v as! AXValue, .axError, &err) && [.attributeUnsupported, .noValue, .notImplemented].contains(err)
       }) else { break }
       if depth == 0 { nonText = [kAXButtonRole, "AXLink", kAXCheckBoxRole, kAXRadioButtonRole, kAXMenuItemRole, kAXPopUpButtonRole].contains(role) }
-      if role == kAXWindowRole || role == kAXApplicationRole { complete = true; break }
+      if role == kAXWindowRole {ownerWindow=e;complete=true;break}
+      if role == kAXApplicationRole {complete=true;break}
       if role == "AXWebArea", webRoot == nil { webRoot = e }
       let textRole = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXSearchField"].contains(role)
-      if !nonText, editor == nil, depth == 0 || textRole, (attr(e, kAXEnabledAttribute) as? Bool) != false,
-         canSet(e, kAXSelectedTextAttribute) || (attr(e, "AXEditable") as? Bool) == true || (textRole && canSet(e, kAXValueAttribute)) {
-        editor = e
+      if !nonText, editor == nil, depth == 0 || textRole {
+        let editableFlag=(attr(e,"AXEditable") as? Bool) ?? (attr(e,kAXIsEditableAttribute) as? Bool)
+        if (attr(e,kAXEnabledAttribute) as? Bool)==false || (attr(e,"AXReadOnly") as? Bool)==true || (textRole && editableFlag==false) {nonText=true}
+        else if editableFlag==true || canSet(e,kAXSelectedTextAttribute) || (textRole && canSet(e,kAXValueAttribute)) {
+          editor=e; textEntry=textRole || editableFlag==true
+        }
       }
       node = CFGetTypeID(values[4]) == AXUIElementGetTypeID() ? (values[4] as! AXUIElement) : nil
     }
@@ -416,11 +500,14 @@ struct InputTarget: ReviewRecipient {
     else if complete, nonText { field = .nonText }
     else { field = .unknown }
     let input = field == .editor ? editor : nil
-    let win = granted ? ((input ?? el).flatMap { elementAttr($0, kAXWindowAttribute) } ?? elementAttr(ax, kAXFocusedWindowAttribute)) : nil
-    let r = input.flatMap(selected)
+    let win = granted ? (ownerWindow ?? (input ?? el).flatMap { elementAttr($0,kAXWindowAttribute) } ?? focusedWindow) : nil
+    let position=input.map(selection), r=position?.range
     var target = Self(pid: pid, element: input, window: win, range: r, field: field)
+    if field == .unknown, granted, win != nil, generic(el), !IsSecureEventInputEnabled() {
+      target.unresolved=true; target.focusContainer=el
+    }
     if let el = input {
-      target.inWebEditor = webRoot != nil
+      target.webArea = webRoot
       if let webRoot {
         let raw=attr(webRoot,kAXURLAttribute); let u=(raw as? URL) ?? (raw as? String).flatMap(URL.init(string:))
         // The URL is an identity token, never opened. Desktop web editors also use private schemes.
@@ -432,7 +519,14 @@ struct InputTarget: ReviewRecipient {
       target.originalLength=length(el)
       if let r, r.location>=0, r.length>0, r.length<=65_536,
         let text=verifiedSelection(length:r.length,direct:attr(el,kAXSelectedTextAttribute) as? String,ranged:{slice(el,r)}) { target.selectionProof=stamp(text) }
-      if r == nil {target.selectionMarker=attr(el,"AXSelectedTextMarkerRange")}
+      if r == nil, position?.unreported == true {
+        if let marker=attr(el,"AXSelectedTextMarkerRange"),CFGetTypeID(marker)==AXTextMarkerRangeGetTypeID() {target.selectionMarker=marker}
+        else if textEntry {
+          var selected:CFTypeRef?
+          let status=AXUIElementCopyAttributeValue(el,kAXSelectedTextAttribute as CFString,&selected)
+          if [.attributeUnsupported,.noValue,.notImplemented].contains(status) || (status == .success && (selected as? String)?.isEmpty == true) {target.fieldOnly=true}
+        }
+      }
     }
     return target
   }
@@ -452,59 +546,67 @@ struct InputTarget: ReviewRecipient {
     p.clearContents()
     return p.setString(text, forType: .string)
   }
-  private func sameCursor(as now: Self) -> Bool {
-    guard pid==now.pid, let a=element, let b=now.element, CFEqual(a,b), let w=window, let v=now.window, CFEqual(w,v), now.editable, !now.protected else { return false }
-    guard document==now.document, originalLength == nil || originalLength==now.originalLength else {return false}
-    if let r=range, let other=now.range { return r.location>=0 && r.length>=0 && r.location==other.location && r.length==other.length && (r.length==0 || (selectionProof != nil && selectionProof==now.selectionProof)) }
-    if let a=selectionMarker, let b=now.selectionMarker { return CFEqual(a,b) }; return false
+  private func sameEditor(as now:Self)->Bool {
+    guard field == .editor, now.field == .editor, pid==now.pid, let a=element, let b=now.element, CFEqual(a,b),
+          let w=window, let v=now.window, CFEqual(w,v),document==now.document else {return false}
+    switch (webArea,now.webArea) {case (nil,nil):return true;case let (a?,b?):return CFEqual(a,b);default:return false}
+  }
+  private func sameCursor(as now: Self, live:Bool) -> Bool {
+    guard sameEditor(as:now), originalLength == nil || originalLength==now.originalLength else {return false}
+    if let r=range {return now.range.map{r.location==$0.location && r.length==$0.length && (r.length==0 || (selectionProof != nil && selectionProof==now.selectionProof))} ?? false}
+    if let a=selectionMarker {return now.selectionMarker.map{CFEqual(a,$0)} ?? false}
+    // No downgrade if a previously reported caret, marker or selected passage disappears.
+    // For an editor with no caret API, a live paste follows its own insertion point only
+    // if the same field stayed untouched. Never use this after opening a review window.
+    return live && fieldOnly && activity?.intact == true && (now.fieldOnly || now.range?.length==0)
   }
   // A reviewed draft may return to its original app only on an explicit click. Recheck the same
   // window, editable element and selection after activation; a changed target always falls back to copy.
   func insertReviewed(_ text: String, complete: @escaping (InsertOutcome) -> Void) {
     guard Access.insertText.granted else {complete(.permission);return};guard editable else { complete(.available); return }
     let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    if front == pid { complete(insert(text)); return }
+    if front == pid { complete(write(text,live:false)); return }
     guard front == getpid(), let app = NSRunningApplication(processIdentifier:pid) else { complete(.moved); return }
     NSApp.yieldActivation(to: app)
     guard app.activate(options:[]) else { complete(.moved); return }
     func attempt(_ left: Int) {
       let current = NSWorkspace.shared.frontmostApplication?.processIdentifier
-      if current == pid { complete(insert(text)) }
+      if current == pid { complete(write(text,live:false)) }
       else if left == 0 || (current != nil && current != getpid()) { complete(.moved) }
       else { DispatchQueue.main.asyncAfter(deadline:.now()+0.04) { attempt(left-1) } }
     }; attempt(15)
   }
-  func insert(_ text: String) -> InsertOutcome {
+  func insert(_ text: String) -> InsertOutcome { defer {stopObserving()}; return write(text,live:true) }
+  private func write(_ text:String,live:Bool)->InsertOutcome {
     guard !text.isEmpty else { return .available }
     if protected { return .secure }
-    guard Access.insertText.granted else {return .permission};guard editable, let old = element else { return .noCaret }
+    guard Access.insertText.granted else {return .permission};guard live ? canInsertLive : editable, let old = element else { return .noCaret }
     guard let now = Self.capture() else { return .moved }
     if now.protected { return .secure }
-    guard sameCursor(as: now) else { return .moved }
+    guard sameCursor(as:now,live:live) else { return .moved }
     // Paste invokes the normal editing transaction in web fields (including input events
     // and undo). Never send Return, replace AXValue or paste blindly into a terminal.
     func awaitingReceipt(_ fallback:InsertOutcome)->InsertOutcome {
-      guard let prior=now.originalLength,let r=now.range,r.location>=0,r.length>=0,r.location<=prior,r.length<=prior-r.location else {return fallback}
+      guard let prior=now.originalLength, let r=now.range ?? (prior==0 ? CFRange(location:0,length:0) : nil),r.location<=prior,r.length<=prior-r.location else {return fallback}
       let n=text.utf16.count,expected=prior-r.length+n
       var out=fallback
       out.readBack={
-        guard let active=Self.capture(),active.pid==now.pid,active.editable,!active.protected,active.document==now.document,
-          let e=active.element,CFEqual(e,old),let w=active.window,let orig=now.window,CFEqual(w,orig),active.originalLength==expected,
-          let sel=active.range, (sel.location==r.location+n && sel.length==0) || (sel.location==r.location && sel.length==n),
+        guard let active=Self.capture(), now.sameEditor(as:active), let e=active.element,active.originalLength==expected,
+          active.range.map({ ($0.location==r.location+n && $0.length==0) || ($0.location==r.location && $0.length==n) }) ?? (prior==0),
           let run=Self.slice(e,CFRange(location:r.location,length:n)),run.utf16.elementsEqual(text.utf16) else {return nil}
         var confirmed=InsertOutcome.inserted
         if let doc=now.document {confirmed.passage=Passage.verified(target:now,document:doc,start:r.location,text:text,count:expected)}
         return confirmed
       };return out
     }
-    if !now.inWebEditor, Self.canSet(old, kAXSelectedTextAttribute) {
+    if !now.inWebEditor, !fieldOnly, Self.canSet(old, kAXSelectedTextAttribute) {
       let write=AXUIElementSetAttributeValue(old,kAXSelectedTextAttribute as CFString,text as CFString)
       if write == .success {return awaitingReceipt(.inserted)}
       // Some apps advertise a setter that they explicitly don't implement. Try paste only
       // for those replies; a timed-out write might already have inserted the whole text.
       guard write == .attributeUnsupported || write == .notImplemented else {return Access.insertText.granted ? .unconfirmed : .permission}
     }
-    let sent=paste(text) { Self.capture().map { self.sameCursor(as:$0) } ?? false }
+    let sent=paste(text) { Self.capture().map { self.sameCursor(as:$0,live:live) } ?? false }
     return sent ? awaitingReceipt(.sent) : .available
   }
   private func paste(_ text:String, stillHere:()->Bool)->Bool {

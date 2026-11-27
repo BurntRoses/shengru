@@ -29,7 +29,7 @@ enum Trigger: String, CaseIterable, Codable {
 struct Options: Codable, Equatable {
   var level: EditLevel = .natural
   var trigger: Trigger = .shortcut
-  var shortToggle = false
+  var shortToggle = true
   var autoInsert = true
   var keepText = true
   var proofWords = true
@@ -42,7 +42,7 @@ struct Options: Codable, Equatable {
   var reviewFirst = false
   var collectFrequent = true
   var learning = true
-  var linkContext = false
+  var linkContext = true
   var model: SpeechModel = .bundled
   var followsModelDefault: Bool? = true
   init() {}

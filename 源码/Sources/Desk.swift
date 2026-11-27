@@ -177,7 +177,8 @@ final class Desk: ObservableObject {
   let audio: SessionAudio
   let mic: CaptureDevice
   let key = Hotkey()
-  private var target: InputTarget?, session: UUID?, press: TimeInterval?, tag = UUID(),
+  private enum Press { case start(TimeInterval), stop }
+  private var target: InputTarget?, session: UUID?, press: Press?, tag = UUID(),
     runOptions = Options(), runTerms: [Term] = []
   private var sound: AVAudioPlayer?, playTimer: Timer?, wasKey: Bool?
   private var pending: DispatchWorkItem?
@@ -194,8 +195,8 @@ final class Desk: ObservableObject {
     manualWordKeys = Set(lib.terms.flatMap { [$0.spelling.lowercased(), $0.spoken.lowercased()] })
     blockedWordKeys = Set(lib.policy.blocked.map { $0.lowercased() })
     audio = SessionAudio(model: model)
-    key.down = { [weak self] in self?.pressed() }
-    key.up = { [weak self] in self?.released() }
+    key.down = { [weak self] in self?.pressed(at:$0) }
+    key.up = { [weak self] in self?.released(at:$0) }
     key.cancel = { [weak self] in
       if self?.phase == .listen || self?.phase == .finish {
         self?.end(cancel: true)
@@ -204,10 +205,10 @@ final class Desk: ObservableObject {
       }
     }
     key.chord = { [weak self] in
-      if self?.press != nil, self?.phase == .listen {
-        self?.end(cancel: true)
-        self?.press = nil
-      }
+      guard let self, let gesture=self.press, self.phase == .listen else {return}
+      self.press=nil
+      // Using a right modifier as part of another shortcut is not a stop tap.
+      if case .start = gesture {self.end(cancel:true)}
     }
     mic.onInterruption = { [weak self] in self?.end(cancel: false) }
   }
@@ -307,22 +308,24 @@ final class Desk: ObservableObject {
     default: break
     }
   }
-  func pressed() {
+  func pressed(at time:TimeInterval = ProcessInfo.processInfo.systemUptime) {
     if phase == .listen && handsFree {
-      press = nil
-      end(cancel: false)
+      press = .stop
       return
     }
     guard phase != .finish && phase != .listen else { return }
-    press = ProcessInfo.processInfo.systemUptime
+    press = .start(time)
     begin(held: true)
   }
-  func released() {
-    guard let t = press else { return }
-    press = nil
+  func released(at time:TimeInterval = ProcessInfo.processInfo.systemUptime) {
+    let gesture=press; press = nil
     guard phase == .listen else { return }
-    let short = ProcessInfo.processInfo.systemUptime - t < 0.23
-    if short && options.shortToggle {
+    if case .stop = gesture { end(cancel:false); return }
+    guard case let .start(t) = gesture else { return }
+    // Focus discovery and first-draw layout may outlast a real tap. Measure the key,
+    // not the time the main thread took to deliver its release.
+    let short = time-t < 0.23
+    if short && runOptions.shortToggle {
       handsFree = true
       onChange?()
     } else {
@@ -335,7 +338,7 @@ final class Desk: ObservableObject {
   var deliveryHint:String? {
     guard phase == .listen, let target else { return nil }
     if runOptions.reviewFirst {return "先审阅"}
-    guard runOptions.autoInsert, allowInsert, target.editable, let name=target.appName else {return "定稿可复制"}
+    guard runOptions.autoInsert, allowInsert, target.canInsertLive, let name=target.appName else {return "定稿可复制"}
     return "→ " + name
   }
   // A click merely to read/select must not make the next dictation wait for an empty save.
@@ -379,6 +382,7 @@ final class Desk: ObservableObject {
       notice("需要麦克风权限")
       return
     }
+    if options.autoInsert && !options.reviewFirst {target?.guardLiveField(activeTrigger)}
     rehearing = nil
     previewing = false
     screen = target?.displayArea ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
@@ -406,6 +410,7 @@ final class Desk: ObservableObject {
     needsCopy = false
     showEdits = false
     phase = .listen
+    if options.autoInsert && !options.reviewFirst, target?.waitingForEditor==true {bindOpeningEditor(id,attempt:0)}
     firstWordsAt = nil; lastSoundAt = -.infinity; armNoSpeech(id)
     status = ""
     let saved =
@@ -416,7 +421,7 @@ final class Desk: ObservableObject {
     ) { [weak self] e in
       guard let s = self, s.session == id else { return }
       s.mic.stop()
-      s.session = nil
+      s.session = nil; s.target = nil
       s.notice(e.localizedDescription)
       s.didStop()
     }
@@ -446,8 +451,20 @@ final class Desk: ObservableObject {
     } catch {
       mic.stop()
       audio.end(id, cancel: true) { _ in }
-      session = nil
+      session = nil; target = nil
       notice(error.localizedDescription)
+    }
+  }
+  // A newly activated web editor can publish its focused field just after key-down.
+  // Bind only during this opening interval, never by looking for a new target at delivery.
+  private func bindOpeningEditor(_ id:UUID,attempt:Int) {
+    let delays=[0.12,0.32,0.65]
+    DispatchQueue.main.asyncAfter(deadline:.now()+delays[attempt]) { [weak self] in
+      guard let self,self.session==id,self.phase == .listen,let initial=self.target,initial.waitingForEditor else {return}
+      if let field=initial.resolveEditor() {
+        if let reason=field.recordingNotice {self.end(cancel:true);self.notice(reason);return}
+        self.target=field;self.onChange?()
+      } else if attempt+1<delays.count {self.bindOpeningEditor(id,attempt:attempt+1)}
     }
   }
   private func didStop() {

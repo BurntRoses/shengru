@@ -46,6 +46,7 @@ struct SettingsPane: View {
       choice("听写快捷键", $d.options.trigger, Trigger.allCases).disabled(d.recordingBusy)
       Divider()
       switchLine("短按切换持续听写", $d.options.shortToggle)
+        .help("短按一次开始，再按一次结束。按住说话仍可用。")
       Divider()
       switchLine("将定稿输入到原光标", $d.options.autoInsert)
       Divider()
