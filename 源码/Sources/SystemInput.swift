@@ -307,34 +307,44 @@ struct InputTarget: ReviewRecipient {
     }
   }
   private var selectionMarker: CFTypeRef? = nil
-  // Only a field that withholds its caret needs this temporary guard. Observe interaction
-  // during the take, not the contents of keystrokes. Never install a keyboard tap solely
-  // for this fallback; the Accessibility grant used for insertion also allows this monitor.
+  // An editor with no caret API may still receive one live paste. Use interaction
+  // counts, never a keyboard listener: global NSEvent monitors can miss keys in apps
+  // using Secure Event Input. Counts add no input-monitoring permission requirement.
+  fileprivate struct KeyBudget {
+    let initial:UInt32, start:TimeInterval?, startAlreadyCounted:Bool
+    private(set) var settled:UInt32?, expectsStop=false
+    init(count:UInt32, lastKey:TimeInterval, start:TimeInterval?) {
+      initial=count; self.start=start
+      startAlreadyCounted=start.map{abs(lastKey-$0)<0.025} ?? false
+      settled=start==nil ? count : nil
+    }
+    mutating func settle(count:UInt32,lastKey:TimeInterval) {
+      guard let start,settled==nil else {return}
+      // The Carbon press can arrive on either side of its Quartz counter update.
+      if count==initial || (!startAlreadyCounted && count==initial &+ 1 && abs(lastKey-start)<0.025) {settled=count}
+    }
+    mutating func stopKey() {expectsStop=true}
+    func permits(_ count:UInt32)->Bool {settled.map{count == $0 &+ (expectsStop ? 1 : 0)} ?? false}
+  }
   private final class Activity {
-    private var intactFlag=true, monitor:Any?, activation:NSObjectProtocol?
-    var intact:Bool {intactFlag && monitor != nil}
-    init(owner:pid_t, trigger:Trigger) {
+    private static func count(_ type:CGEventType)->UInt32 {CGEventSource.counterForEventType(.combinedSessionState,eventType:type)}
+    private static var lastKey:TimeInterval {ProcessInfo.processInfo.systemUptime-CGEventSource.secondsSinceLastEventType(.combinedSessionState,eventType:.keyDown)}
+    private static var buttons:[UInt32] {[CGEventType.leftMouseDown,.rightMouseDown,.otherMouseDown].map(count)}
+    private let clicks=buttons
+    private var valid=true, activation:NSObjectProtocol?, keys:KeyBudget
+    var intact:Bool {valid && Self.buttons==clicks && keys.permits(Self.count(.keyDown))}
+    init(owner:pid_t,start:TimeInterval?) {
+      keys=KeyBudget(count:Self.count(.keyDown),lastKey:Self.lastKey,start:start)
       activation=NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] note in
-        if let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,app.processIdentifier != owner {self?.intactFlag=false}
+        if let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,app.processIdentifier != owner {self?.valid=false}
       }
-      monitor=NSEvent.addGlobalMonitorForEvents(matching:[.keyDown,.leftMouseDown,.rightMouseDown,.otherMouseDown]) { [weak self] event in
-        self?.observe(event,shortcut:trigger)
-      }
-      if NSWorkspace.shared.frontmostApplication?.processIdentifier != owner {intactFlag=false}
+      if NSWorkspace.shared.frontmostApplication?.processIdentifier != owner {valid=false}
+      if start != nil {DispatchQueue.main.asyncAfter(deadline:.now()+0.06) { [weak self] in
+        self?.keys.settle(count:Self.count(.keyDown),lastKey:Self.lastKey)
+      }}
     }
-    func observe(_ event:NSEvent,shortcut:Trigger) {
-      // A registered hotkey may be consumed by Carbon or delivered to the monitor;
-      // neither start nor stop is an edit. A modifier alone does not generate keyDown.
-      if event.type == .keyDown, shortcut.registered, event.keyCode==shortcut.code, !event.isARepeat {
-        let mods=event.modifierFlags.intersection([.command,.option,.control,.shift])
-        if mods == (shortcut == .shortcut ? [.control,.shift] : []) {return}
-      }
-      intactFlag=false
-    }
-    func stop() {
-      if let monitor {NSEvent.removeMonitor(monitor);self.monitor=nil}
-      if let activation {NSWorkspace.shared.notificationCenter.removeObserver(activation);self.activation=nil}
-    }
+    func stopKey() {keys.stopKey()}
+    func stop() {valid=false;if let activation {NSWorkspace.shared.notificationCenter.removeObserver(activation);self.activation=nil}}
     deinit {stop()}
   }
   private var fieldOnly=false, unresolved=false, activity:Activity?, focusContainer:AXUIElement?
@@ -357,9 +367,10 @@ struct InputTarget: ReviewRecipient {
     }
     return now
   }
-  mutating func guardLiveField(_ trigger:Trigger) {
-    if fieldOnly || unresolved {activity=Activity(owner:pid,trigger:trigger)}
+  mutating func guardLiveField(start:TimeInterval?) {
+    if fieldOnly || unresolved {activity=Activity(owner:pid,start:start)}
   }
+  func noteStopKey() {activity?.stopKey()}
   func stopObserving() {activity?.stop()}
   fileprivate enum Document: Equatable {
     case file(Data), window(Data), web(AXUIElement,Data)

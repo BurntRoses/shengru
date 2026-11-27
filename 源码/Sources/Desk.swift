@@ -311,6 +311,7 @@ final class Desk: ObservableObject {
   func pressed(at time:TimeInterval = ProcessInfo.processInfo.systemUptime) {
     if phase == .listen && handsFree {
       press = .stop
+      if activeTrigger.registered {target?.noteStopKey()}
       return
     }
     guard phase != .finish && phase != .listen else { return }
@@ -382,7 +383,11 @@ final class Desk: ObservableObject {
       notice("需要麦克风权限")
       return
     }
-    if options.autoInsert && !options.reviewFirst {target?.guardLiveField(activeTrigger)}
+    if options.autoInsert && !options.reviewFirst {
+      let start:TimeInterval?
+      if activeTrigger.registered, case let .start(t)=press {start=t} else {start=nil}
+      target?.guardLiveField(start:start)
+    }
     rehearing = nil
     previewing = false
     screen = target?.displayArea ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame

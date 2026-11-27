@@ -23,7 +23,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>19</string>
+	<string>20</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -32,18 +32,18 @@
 	<string>仅在你开始听写时使用麦克风，语音在本机转成文字。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/BurntRoses/shengru/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>PDNk2A9lIJwJNkJz5NUbOs6o+OyuirvFUYvMYYCknig=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<false/>
-	<key>SUAutomaticallyUpdate</key>
-	<false/>
-	<key>SUSendProfileInfo</key>
-	<false/>
 	<key>SURequireSignedFeed</key>
 	<true/>
+	<key>SUSendProfileInfo</key>
+	<false/>
 	<key>SUVerifyUpdateBeforeExtraction</key>
 	<true/>
 </dict>
