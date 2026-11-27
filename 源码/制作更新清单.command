@@ -18,7 +18,7 @@ cat >"$t/appcast.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
  <channel><title>如流 · PhraseFlow</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>如流 $short · 修订 $v</title><pubDate>$date_rfc</pubDate>
+  <item><title>如流 $short</title><pubDate>$date_rfc</pubDate>
    <sparkle:version>$v</sparkle:version><sparkle:shortVersionString>$short</sparkle:shortVersionString><sparkle:minimumSystemVersion>$os</sparkle:minimumSystemVersion>
    <description sparkle:descriptionFormat="plain-text">$notes</description>
    <enclosure url="https://github.com/BurntRoses/shengru/releases/download/$tag/Shengru.dmg" type="application/octet-stream" length="$size" sparkle:edSignature="$sig"/>

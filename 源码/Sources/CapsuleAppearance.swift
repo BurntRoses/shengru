@@ -35,9 +35,11 @@ enum CapsuleWash: String, CaseIterable, Codable {
 struct CapsuleAppearance: Codable, Equatable {
   var palette: CapsulePalette = .celadon
   var wash: CapsuleWash = .halo
-  static var defaultMaterial: MaterialChoice { if #available(macOS 26, *) { return .glass }; return .frost }
-  var material = Self.defaultMaterial
+  var material: MaterialChoice = .frost
   var position: Placement = .bottom
+  // A fraction of the available travel, not the screen centre: a bottom-aligned panel grows upwards.
+  struct Anchor: Codable, Equatable { let x,y:Double }
+  var anchors: [String:Anchor] = [:]
   var width = 472.0, typeSize = 17.0, radius = 25.0, opacity = 0.62, hideDelay = 1.25
   var review = true, animate = true, waveform = true, light = true, shimmer = true
   init() {}
@@ -46,6 +48,7 @@ struct CapsuleAppearance: Codable, Equatable {
     func read<T: Decodable>(_ k: CodingKeys, _ fallback: T) -> T { (try? c.decode(T.self, forKey:k)) ?? fallback }
     func number(_ k: CodingKeys, _ fallback: Double, _ range: ClosedRange<Double>) -> Double { min(range.upperBound,max(range.lowerBound,read(k,fallback))) }
     palette=read(.palette,palette); wash=read(.wash,wash); material=read(.material,material); position=read(.position,position)
+    anchors=read(.anchors,anchors).filter { (0...1).contains($0.value.x) && (0...1).contains($0.value.y) }
     if #unavailable(macOS 26), material == .glass { material = .frost }
     width=number(.width,width,340...640); typeSize=number(.typeSize,typeSize,13...24); radius=number(.radius,radius,12...30)
     opacity=number(.opacity,opacity,0...1); hideDelay=number(.hideDelay,hideDelay,0.5...3)

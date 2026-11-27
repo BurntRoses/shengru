@@ -36,7 +36,7 @@ struct PanelStudio: View {
   private var controls: some View {
     VStack(alignment:.leading,spacing:10) {
       Surface(inset:Layout.inset,spacing:8) {
-        HStack { PanelTitle(title:"配色"); Spacer(); Button("恢复默认") { d.restorePanel() }.deskAction().disabled(look == CapsuleAppearance() && !d.panelMoved).help("恢复悬浮窗的配色、位置、尺寸和动效") }
+        HStack { PanelTitle(title:"配色"); Spacer(); Button("恢复默认") { d.restorePanel() }.deskAction().disabled(look == CapsuleAppearance()).help("恢复悬浮窗的配色、位置、尺寸和动效") }
         HStack(spacing:4) {
           ForEach(CapsulePalette.allCases,id:\.self) { p in
             let paint = p.inks(scheme), selected = look.palette == p
@@ -59,6 +59,10 @@ struct PanelStudio: View {
       }
       fold("大小与位置", symbol:"arrow.up.left.and.arrow.down.right", summary:"\(Int(look.width)) pt · \(look.position.rawValue)", isOpen:$dimensions) {
         segment("位置", $d.options.appearance.position, Placement.allCases) { $0.rawValue }
+        row("自定位置") {
+          Button("拖动定位") { d.previewing = true }.deskAction().disabled(d.phase != .idle).help("拖动屏幕上悬浮窗顶部的横条，松开保存位置")
+          Button("还原位置") { d.options.appearance.anchors.removeAll() }.deskAction().disabled(look.anchors.isEmpty)
+        }
         slider("宽度", $d.options.appearance.width,340...640,2,"pt")
         slider("字号", $d.options.appearance.typeSize,13...24,1,"pt")
         slider("圆角", $d.options.appearance.radius,12...30,1,"pt")

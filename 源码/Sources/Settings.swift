@@ -54,9 +54,7 @@ struct SettingsPane: View {
       Divider()
       switchLine("按语境校对用词", $d.options.proofWords).help("关闭后直接采用模型的用词，不加词库提示；仍按所选方式整理表达。")
       Divider()
-      switchLine("先审阅，再确认定稿", $d.options.reviewFirst)
-      Divider()
-      HStack { Text("打开听写窗口"); Spacer(); Text(d.openShortcut ? "⌃ ⌥ 空格" : "菜单栏 → 打开听写").foregroundStyle(.secondary) }.frame(minHeight:Layout.row)
+      switchLine("输入前审阅", $d.options.reviewFirst)
     }
     Surface(inset: Layout.inset, spacing: 8) {
       PanelTitle(title: "整理方式")
@@ -101,10 +99,10 @@ struct SettingsPane: View {
       retention(audio: true)
       Divider()
       switchLine("缩短录音里的长静音", $d.options.compactQuiet).disabled(!d.options.keepAudio).help("只缩短连续四秒以上的近乎无声片段。识别始终使用完整声音。每五分钟自动保存一节。")
-      Text("关闭后不再保存新记录，已有记录可在历史中删除。").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+
     }
     Surface(inset:Layout.inset) {
-      PanelTitle(title:"听写记忆"); switchLine("记住我确认的词语修改",$d.options.learning).help("第一次改词只作备选。在不同录音里确认过，并且这句话的用法也相符时，才自动采用。"); Divider()
+      PanelTitle(title:"听写记忆"); switchLine("记住改词",$d.options.learning).help("第一次改词只作备选。在不同录音里确认过，并且这句话的用法也相符时，才自动采用。"); Divider()
       switchLine("自动收录常用词", $d.options.collectFrequent).disabled(!d.options.keepText).help(FrequencyCopy.note); Divider()
       switchLine("关联连续听写",$d.options.linkContext).disabled(!d.options.keepText).help("开启文字记录后，同一应用内三分钟内的相邻听写可参考上一段。")
       HStack { Button("查看修改记忆（\(d.memories.count)）") { showMemory = true }.deskAction(); Spacer(); Button("使用引导") { d.openGuide?() }.deskAction() }.padding(.top,8)
@@ -153,7 +151,7 @@ struct SettingsPane: View {
         }.labelsHidden().keyCue().disabled(!saved.wrappedValue)
         Toggle(name, isOn: saved).labelsHidden().toggleStyle(.switch).keyCue()
       }.frame(width:Layout.controlRail,alignment:.trailing)
-    }.frame(minHeight:Layout.row)
+    }.frame(minHeight:Layout.row).help("关闭后不再保存，已有记录可在历史中删除。")
   }
 }
 

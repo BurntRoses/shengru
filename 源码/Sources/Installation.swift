@@ -40,6 +40,26 @@ enum Installation {
       NSWorkspace.shared.openApplication(at:dest,configuration:config) { _,error in DispatchQueue.main.async {if let error {NSAlert(error:error).runModal()}; NSApp.terminate(nil)} };return false
     } catch { NSAlert(error:error).runModal();return false }
   }
+  // Only the recent shelf belongs to this operation. A pinned tile and other Dock preferences are user choices.
+  static func ownRecent(_ tile:[String:Any], at bundle:URL)->Bool {
+    guard let data=tile["tile-data"] as? [String:Any] else {return false}
+    if let identifier=data["bundle-identifier"] as? String, !identifier.isEmpty {return identifier == id}
+    guard let file=data["file-data"] as? [String:Any],let raw=file["_CFURLString"] as? String,
+          let url=URL(string:raw),url.isFileURL else {return false}
+    return url.standardizedFileURL.path == bundle.standardizedFileURL.path
+  }
+  static func clearDockRecent(at bundle:URL) {
+    let dock="com.apple.dock" as CFString, key="recent-apps" as CFString
+    CFPreferencesAppSynchronize(dock)
+    guard let items=CFPreferencesCopyAppValue(key,dock) as? [[String:Any]] else {return}
+    let remaining=items.filter { !ownRecent($0,at:bundle) }
+    guard remaining.count != items.count else {return}
+    CFPreferencesSetAppValue(key,remaining as CFArray,dock)
+    // The running Dock caches recent tiles even after synchronizing its domain. Refresh only
+    // this login session, and only when this uninstall actually removed a recent tile.
+    if CFPreferencesAppSynchronize(dock), let current=NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.dock").first,
+       current.bundleURL?.path == "/System/Library/CoreServices/Dock.app" { _ = current.terminate() }
+  }
   static func eraseData(library:URL,home:URL,domain:String,defaults:UserDefaults) throws {
     let libraryDir=home.appendingPathComponent("Library",isDirectory:true)
     let paths=[library]+["Caches/\(domain)","HTTPStorages/\(domain)","HTTPStorages/\(domain).binarycookies","WebKit/\(domain)","Saved Application State/\(domain).savedState"].map {libraryDir.appendingPathComponent($0)}

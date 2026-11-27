@@ -151,6 +151,7 @@ private struct HandleArea: NSViewRepresentable {
     override func mouseDown(with event: NSEvent) {
       guard let window else { return }; let p = NSEvent.mouseLocation; grip = NSPoint(x:p.x-window.frame.minX,y:p.y-window.frame.minY)
     }
+    override func mouseUp(with event: NSEvent) { (window as? FloatPanel)?.endMove?() }
     override func mouseDragged(with event: NSEvent) { let p = NSEvent.mouseLocation; (window as? FloatPanel)?.moveByHand?(NSPoint(x:p.x-grip.x,y:p.y-grip.y),p) }
   }
   func makeNSView(context: Context) -> Handle { Handle() }
@@ -292,7 +293,7 @@ struct CapsuleView: View {
             stable + tail)
       }
       }
-    }.padding(.horizontal, CapsuleMetrics.insetX).padding(.vertical, CapsuleMetrics.insetY)
+    }.padding(.horizontal,CapsuleMetrics.insetX).padding(.top,CapsuleMetrics.dragHeight).padding(.bottom,CapsuleMetrics.insetY)
       .frame(maxWidth: .infinity, maxHeight: hasWords || desk.capsuleReplay != nil ? .infinity : nil, alignment: .leading)
       .background { surface(rr) }
       .overlay {
@@ -303,6 +304,11 @@ struct CapsuleView: View {
             rr.strokeBorder(LinearGradient(colors:[.clear,inks.accent.opacity(0.32),.white.opacity(0.62),.clear],startPoint:UnitPoint(x:pos*1.7-0.7,y:0),endPoint:UnitPoint(x:pos*1.7,y:1)),lineWidth:1)
           }.allowsHitTesting(false).accessibilityHidden(true)
         }
+      }.overlay(alignment:.top) {
+        ZStack {
+          Capsule().fill(.secondary.opacity(0.46)).frame(width:26,height:3).allowsHitTesting(false)
+          if !sample { HandleArea().help("拖动定位") }
+        }.frame(maxWidth:.infinity).frame(height:CapsuleMetrics.dragHeight).accessibilityHidden(true)
       }.overlay(alignment:.topTrailing) {
         if !sample { UpdateDot(updates:desk.updates).padding(.top,4).padding(.trailing,15) }
       }.environment(\.colorScheme,scheme).padding(CapsuleMetrics.outer).focusEffectDisabled()
@@ -434,7 +440,8 @@ private struct CapsuleCancel: NSViewRepresentable {
 enum CapsuleMetrics {
   static let insetX: CGFloat = 16, insetY: CGFloat = 9, outer: CGFloat = 3
   static let header: CGFloat = 26, gap: CGFloat = 6, leading: CGFloat = 3
-  static let shell = 2 * (insetY + outer) + header
+  static let dragHeight: CGFloat = 15
+  static let shell = dragHeight + insetY + 2 * outer + header
   static func transcriptHeight(_ text:String, width:CGFloat, size:CGFloat) -> CGFloat {
     min(172,max(83,inkHeight(text,width:width,font:.systemFont(ofSize:size,weight:.medium)) + shell + gap + 2))
   }
@@ -451,6 +458,24 @@ enum CapsuleMetrics {
 }
 final class FloatPanel: NSPanel {
   var moveByHand: ((NSPoint,NSPoint)->Void)?
+  var endMove: (() -> Void)?
+  private var grip: CGPoint?
+  // Receive the dedicated grip before the glass hosting view; text and buttons use normal hit testing.
+  override func sendEvent(_ e:NSEvent) {
+    switch e.type {
+    case .leftMouseDown:
+      let p=e.locationInWindow
+      if p.y >= frame.height-CapsuleMetrics.outer-CapsuleMetrics.dragHeight && p.y <= frame.height {
+        grip=p; return
+      }
+    case .leftMouseDragged:
+      if let g=grip {let p=NSEvent.mouseLocation;moveByHand?(.init(x:p.x-g.x,y:p.y-g.y),p); return}
+    case .leftMouseUp:
+      if grip != nil {grip=nil;endMove?();return}
+    default: break
+    }
+    super.sendEvent(e)
+  }
   var acceptsEditor = false
   override var canBecomeKey: Bool { acceptsEditor }
   override var canBecomeMain: Bool { false }
@@ -461,23 +486,22 @@ private final class PanelHost: NSHostingView<CapsuleView> {
 final class CapsuleController {
   let panel: FloatPanel
   private let desk: Desk
-  private var previousPosition: Placement?
   private var visibleToken = 0
-  private var manual: (display: NSNumber?, relative: NSPoint, placement:Placement)?
-  private var displayWatch: NSObjectProtocol?
-  static func fitted(_ origin:NSPoint, size:NSSize, in area:NSRect) -> NSRect {
-    let safe = area.insetBy(dx:min(8,area.width/4),dy:min(8,area.height/4))
-    let w = min(size.width,safe.width), h = min(size.height,safe.height)
-    return NSRect(x:min(max(origin.x,safe.minX),safe.maxX-w).rounded(), y:min(max(origin.y,safe.minY),safe.maxY-h).rounded(),width:w,height:h)
-  }
-  private func display(_ screen:NSScreen) -> NSNumber? { screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber }
+  private var hitBacking: Bool?
+  private let space=PanelSpace()
+  private var dragAnchor:(key:String,value:CapsuleAppearance.Anchor)?
+  private var observers:[(NotificationCenter,NSObjectProtocol)] = []
   private func dragged(_ origin:NSPoint, pointer:NSPoint) {
-    guard let s = NSScreen.screens.first(where:{$0.frame.contains(pointer)}) ?? panel.screen ?? NSScreen.main else { return }
-    let area = s.visibleFrame, rect = Self.fitted(origin,size:panel.frame.size,in:area)
-    manual = (display(s),NSPoint(x:(rect.midX-area.minX)/area.width,y:(rect.midY-area.minY)/area.height), desk.options.appearance.position)
-    desk.panelMoved = true; desk.screen = area; panel.setFrame(rect,display:true)
+    guard let s=NSScreen.screens.first(where:{$0.frame.contains(pointer)}) ?? panel.screen else {return}
+    let area=space.area(on:s), rect=PanelPlacement.fitted(origin,size:panel.frame.size,in:area)
+    dragAnchor=(PanelSpace.key(s,desk.options.appearance.position),PanelPlacement.anchor(rect,in:area))
+    desk.screen=s.frame;panel.setFrame(rect,display:true)
   }
-  deinit { if let displayWatch { NotificationCenter.default.removeObserver(displayWatch) } }
+  private func finishDrag() {
+    guard let a=dragAnchor else {return};dragAnchor=nil
+    desk.options.appearance.anchors[a.key]=a.value
+  }
+  deinit {for (center,token) in observers {center.removeObserver(token)}}
   init(_ d: Desk) {
     desk = d
     panel = FloatPanel(
@@ -488,6 +512,7 @@ final class CapsuleController {
     panel.isOpaque = false
     panel.hasShadow = true
     panel.hidesOnDeactivate = false
+    panel.canHide = false
     panel.level = .statusBar
     panel.collectionBehavior = [
       .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle,
@@ -497,10 +522,15 @@ final class CapsuleController {
     let view = PanelHost(rootView: CapsuleView(desk: d))
     view.sizingOptions = []
     panel.contentView = view
-    d.resetPanelPosition = { [weak self] in self?.manual = nil; self?.sync() }
+    panel.endMove = { [weak self] in self?.finishDrag() }
     panel.setAccessibilityLabel("听写悬浮窗")
     panel.moveByHand = { [weak self] o,p in self?.dragged(o,pointer:p) }
-    displayWatch = NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in self?.sync() }
+    for (center,name) in [(NotificationCenter.default,NSApplication.didChangeScreenParametersNotification),(NSWorkspace.shared.notificationCenter,NSWorkspace.activeSpaceDidChangeNotification)] {
+      let token=center.addObserver(forName:name,object:nil,queue:.main) { [weak self] _ in
+        self?.space.invalidate();self?.sync()
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.55) { [weak self] in self?.space.invalidate();self?.sync() }
+      }; observers.append((center,token))
+    }
   }
   func sync() {
     if panel.acceptsEditor && !desk.panelEditing && panel.isKeyWindow {
@@ -508,6 +538,13 @@ final class CapsuleController {
       panel.makeFirstResponder(nil); panel.orderOut(nil)
     }
     panel.acceptsEditor=desk.panelEditing
+    // Native glass is composited outside the backing store. A clear borderless window
+    // can otherwise paint a complete capsule while WindowServer routes every click through it.
+    let glass=desk.options.appearance.material == .glass
+    if glass != hitBacking {
+      panel.backgroundColor = glass ? NSColor.windowBackgroundColor.withAlphaComponent(0.035) : .clear
+      panel.ignoresMouseEvents=false;hitBacking=glass
+    }
     visibleToken += 1
     let token = visibleToken
     let motion = desk.options.appearance.animate && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -522,9 +559,9 @@ final class CapsuleController {
       }
       return
     }
-    let chosen = NSScreen.screens.first { $0.visibleFrame == desk.screen } ?? (panel.isVisible ? panel.screen : nil) ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+    let chosen = NSScreen.screens.first { $0.frame == desk.screen } ?? (panel.isVisible ? panel.screen : nil) ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
     guard let chosen else { return }
-    let area = chosen.visibleFrame
+    let area = space.area(on:chosen)
     let preview = desk.previewing && desk.phase == .idle
     let replay=desk.capsuleReplay
     let text = preview ? "明天下午开会，请带上合同。" : desk.phase == .result ? desk.reviewText : desk.stable + desk.tail
@@ -556,19 +593,10 @@ final class CapsuleController {
       if count>0 {height+=CapsuleMetrics.gap+CapsuleReplayView.choicesHeight(count)}
     }
     if desk.panelEditing { height=max(94,height) }; let size = NSSize(width:width,height:min(height,max(1,area.height-16)))
-    var x = area.midX - width / 2
-    var y = area.minY + 46
-    if desk.options.appearance.position == .top {
-      x = area.maxX - width - 22
-      y = area.maxY - height - 22
-    }
-    if previousPosition != nil && previousPosition != desk.options.appearance.position { manual = nil }
-    if let m = manual, m.display == self.display(chosen), m.placement == desk.options.appearance.position {
-      x = area.minX + m.relative.x * area.width - width / 2; y = area.minY + m.relative.y * area.height - height / 2
-    }
-    let rect = Self.fitted(NSPoint(x:x,y:y),size:size,in:area)
-    let was = panel.isVisible
-    previousPosition = desk.options.appearance.position
+    let placement=desk.options.appearance.position, key=PanelSpace.key(chosen,placement)
+    let point=dragAnchor.flatMap { $0.key == key ? $0.value : nil } ?? desk.options.appearance.anchors[key]
+    let rect=PanelPlacement.frame(size,in:area,placement:placement,anchor:point)
+    let was=panel.isVisible
     let changed = panel.frame != rect
     if changed {
       // Apply geometry synchronously; a queued resize animation must never undo a drag.

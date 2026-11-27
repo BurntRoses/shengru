@@ -1,64 +1,67 @@
-<img src="docs/icon.png" width="72" height="72" alt="如流">
+<img src="docs/icon.png" width="72" height="72" alt="如流的声波图标">
 
 # 如流 · PhraseFlow
 
-**把光标放好，按住右 ⌘，说完松手。** 如流把中英文口述写进你正在用的 Mac 应用。第一段听写就能断网使用，不需要账户。
+Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** 说话，松开输入。要连续说一段，短按开始，再按结束。不用打开主窗口。
 
-[下载 macOS 安装包](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.21/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.21) · [English](#english) · [完整使用说明](源码/使用说明.md)
+[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.22) · [使用手册](源码/使用说明.md) · [English](#english)
 
-![如流听写页：实时转写在上，最近定稿留在下方](docs/dictation.png)
+<img src="docs/frost.png" width="570" alt="默认青瓷磨砂悬浮窗，顶部横条可拖动，下方显示听写文字">
 
-## 一段话，从开口到定稿
+## 听写与改词
 
-| 想做什么 | 怎么用 |
-| --- | --- |
-| 回一条消息 | 按住右 ⌘ 说话，松开写回原光标。写长一点？短按开始，再按一次结束。 |
-| 改刚才说的一句 | 直接点悬浮窗或听写页里的文字修改，⌘↩ 保存。原文和选区仍吻合时才写回；已经移开光标，就保留修改稿供复制。 |
-| 分清一个同音词 | 保留录音后点「增强识别」，对照原声复听。有合适的可选写法，点一下就能替换。 |
-| 日常用自己的术语 | 可导入词表，也可以从已确认的改词中积累记忆。首次识别先听原声，校对才参考语境；一处改动不会成为全局替换。 |
-| 只留下想留的内容 | 文字、录音、词库和记忆都在本机。文字与录音可分别关闭、限量或删除。 |
+- **原位输入**：浮窗随说随显，不抢光标。可以点定稿直接改，按 **⌘↩** 保存；原文和光标仍匹配时才写回，一旦换了位置，就留在本机供复制。
+- **原声复听**：对某个词不满意？保留录音后点「增强识别」，再听一遍原声。候选写法点一下就换，不必重说整段。浮窗已收起时，可从菜单栏打开上次听写。
+- **整理与词库**：四档整理从保留原话到分点行文。可导入自己的词库，也可让如流记住反复确认的改词。第一次识别不套用个人改词规则。
+- **文字与录音**：各自选择是否保存、保留多少条。长录音分节写入，历史里仍是一段，可编辑或回听。
 
-## 让悬浮窗适合你的桌面
+<details><summary>查看听写首页</summary>
 
-玻璃能透出桌面轮廓，磨砂把背景柔化，不透明则隔开背景。默认青瓷晕染，底部光晕缓缓移动；关闭动效或开启系统「减少动态效果」，光晕就停下。设置里能预览实际大小，再决定颜色、字号和停留时间。
-
-| 材质 | 同一背景上的悬浮窗 |
-| --- | --- |
-| 液态玻璃 | <img src="docs/glass.png" width="516" alt="液态玻璃悬浮窗，可见背景轮廓"> |
-| 磨砂 | <img src="docs/frost.png" width="516" alt="磨砂悬浮窗，背景柔化"> |
-| 不透明 | <img src="docs/solid.png" width="516" alt="不透明悬浮窗，背景不透出"> |
-
-<details><summary>查看外观设置</summary>
-
-![悬浮窗的材质、底色和动效设置](docs/appearance.png)
+<img src="docs/dictation.png" width="780" alt="听写首页：上方是听写快捷键与整理方式，下方保留最近定稿；未授权输入监控时显示备用键">
 
 </details>
 
-## 安装与更新
+## 悬浮窗
 
-1. 下载 **PhraseFlow.dmg**，把「如流」拖入「应用程序」，或双击镜像里的应用选择「安装并打开」。支持 **macOS 14+、Apple 芯片与 Intel**；液态玻璃需要 macOS 26+。
-2. 首次打开，按引导允许麦克风、辅助功能和输入监控，再选择记录偏好。没有输入监控时，可先用 **Control + Shift + 空格**。
-3. 如流启动时在后台检查新版。设置里可看大小、更新内容和进度，选择安装、稍后再说或忽略该版。卸载入口在「设置 → 更新」，可选择是否同时删掉本机资料。
+默认青瓷磨砂。拖动顶部横条可改变位置，松开即记住。普通桌面避开程序坞，全屏时可贴近底边。「设置 → 悬浮窗」可调整宽度、通透度、动效和停留时间，或还原位置。
 
-从旧版「语音输入」手动更新：退出旧版，只把旧应用移到废纸篓，再将「如流」拖入「应用程序」。已有记录和设置会保留。
+| 磨砂（默认） | 液态玻璃（macOS 26+） | 不透明 |
+| :---: | :---: | :---: |
+| <img src="docs/frost.png" alt="磨砂悬浮窗"> | <img src="docs/glass.png" alt="液态玻璃悬浮窗"> | <img src="docs/solid.png" alt="不透明悬浮窗"> |
 
-**当前下载是 1.0.0 修订 21 候选版，未经 Apple 公证。** 首次打开可能受到系统拦截；请核对下载来源并参阅 [Apple 的说明](https://support.apple.com/zh-cn/102445)。此候选版升级后可能需要重新授权。
+<details><summary>查看外观设置</summary>
 
-用终端安装（需要 Git）：
+<img src="docs/appearance.png" width="780" alt="外观设置：选择配色、着色、材质和通透度">
+
+</details>
+
+## 安装与模型
+
+1. 下载 **PhraseFlow.dmg**，把「如流」拖入「应用程序」，双击打开。支持 macOS 14 及以上，兼容 Apple 芯片和 Intel。
+2. 在首次引导中设置麦克风、辅助功能、输入监控，选择是否保存文字和录音。还没允许输入监控时，可用 **Control + Shift + 空格** 听写。
+3. 安装包只含「均衡听写」，首次使用不用下载。需要更快出字、更长听写窗口或更大模型时，在「设置 → 模型」点「下载」，装好后点「使用」。听写和复听均可离线进行。
+
+| 初次引导 | 模型设置 |
+| :---: | :---: |
+| <img src="docs/welcome.png" alt="欢迎使用如流本地语音输入，下一步设置权限"> | <img src="docs/models.png" alt="均衡听写使用中，其余四款模型可按需下载"> |
+
+**当前下载：1.0.0 候选版，尚未获 Apple 公证。** 首次打开可能出现系统提示，更新后可能需要重新授权。见 [Apple 的首次打开说明](https://support.apple.com/zh-cn/102445)。
+
+也可以用终端安装：
 
 ```sh
-git clone --depth 1 --branch v1.0.0-build.21 https://github.com/BurntRoses/shengru.git PhraseFlow
+git clone --depth 1 --branch v1.0.0-build.22 https://github.com/BurntRoses/shengru.git PhraseFlow
 bash PhraseFlow/install.sh
 ```
 
+更新时打开「设置 → 更新」查看大小、说明和进度。同一页可以卸载，选择保留或删除本机资料。手动从旧版「语音输入」升级时，只替换「应用程序」里的旧应用即可保留资料。
+
 ## English
 
-**PhraseFlow is local Chinese and English dictation for Mac.** Place your cursor, hold **Right Command**, speak, and release to type. For a longer passage, tap once to start and again to finish. The last finished passage stays beneath the live transcript.
+**PhraseFlow is offline Chinese and English dictation for Mac.** Hold **Right Command** to dictate into the current text field; release to insert. For a longer passage, tap once to start and again to finish. The menu bar and floating transcript work without the main window.
 
-Click a word in the floating panel, workspace or history to edit it. Save with **⌘↩**. PhraseFlow checks the original text and selection before replacing a passage in another app. You can replay the recording, choose a different spelling, and import your own vocabulary. Your speech, text and corrections stay on your Mac. Only update checks, software updates and optional model downloads use the network.
+Edit a finished passage in the panel or history. When available, replay the audio to check a word, then click a suggested spelling to apply it. The frosted panel remembers its position and can sit near the bottom edge in full screen. One balanced model is bundled; four others are optional downloads. Dictation, recordings and personal vocabulary stay on your Mac.
 
-[Download for macOS](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.21/PhraseFlow.dmg). Install in Applications and follow the first-run guide. Runs on macOS 14 or later; Apple silicon and Intel are supported. The interface is in Simplified Chinese. **This candidate is not notarized by Apple.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445). System permissions may need to be granted again after updating this candidate.
+[Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/PhraseFlow.dmg). Drag the app to Applications and follow the first-run guide. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
 
-Updating manually from **语音输入**? Quit the old app, move just its application bundle to the Trash, then install **如流**. Your recordings, text and preferences stay on this Mac.
-
-[构建 / Build](源码/使用说明.md#从源码构建) · [第三方许可 / Third-party notices](源码/Resources/Licenses)
+[构建 / Build](源码/使用说明.md#从源码构建) · [第三方许可 / Notices](源码/Resources/Licenses)

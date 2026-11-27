@@ -2,16 +2,15 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
  <channel><title>如流 · PhraseFlow</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>如流 1.0.0 · 修订 21</title><pubDate>Fri, 27 Nov 2026 06:49:38 +0000</pubDate>
-   <sparkle:version>21</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-   <description sparkle:descriptionFormat="plain-text">默认用右 ⌘ 听写，首次打开可一次设置权限和记录偏好。
-边说边看转写，上一段定稿留在下方。
-悬浮窗新增缓慢晕染的底光，玻璃、磨砂和不透明各有层次。
-新版提醒会显示下载大小、更新说明和进度，也可忽略本次更新。</description>
-   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.21/Shengru.dmg" type="application/octet-stream" length="156870037" sparkle:edSignature="LlgEQLzpNZBiOzBkzCLVf+r/IOlJNB5fd6QFci9gqdbHt/GX+Ixgz+KcVfWnEiFcwKtHiTF2Tp+cfGmY1ckDCQ=="></enclosure>
+  <item><title>如流 1.0.0</title><pubDate>Fri, 27 Nov 2026 08:44:12 +0000</pubDate>
+   <sparkle:version>22</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+   <description sparkle:descriptionFormat="plain-text">新版声波图标，日常听写无需打开主窗口。
+悬浮窗默认磨砂，可拖到全屏底部，位置自动记住。
+内置均衡听写，其他四款模型按需下载。</description>
+   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.22/Shengru.dmg" type="application/octet-stream" length="156773077" sparkle:edSignature="kdbou7Oa6mb3qZVFbDRyNyTEyohZ9LuJrs0hNjn50vVdbpG0Sw2XCHG3kUWBx43QRZjtfqRlo7YBpYCS9RaTDA=="></enclosure>
   </item>
  </channel>
 </rss><!-- sparkle-signatures:
-edSignature: sLQhoWLShMsfwBePBcMornajPQPuc6nHAj3uwTI3rIyPuwtFJHZQfCR/+VLpMUjN34aToa+TwI0osehLcRyLAg==
-length: 1450
+edSignature: o6fUKitMvqozcHnSKepxwPhORKMUd4CjqrhIUT8kbv8OP/flOjODYvLtNHP0ku1WR35aAP1W+267VeP81Gd/BQ==
+length: 1320
 -->

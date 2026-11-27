@@ -55,16 +55,12 @@ final class Desk: ObservableObject {
   @MainActor lazy var updates = AppUpdates(self)
   var restartingForUpdate = false
   var allowsUpdateRestart: Bool { !recordingBusy && !awaitingReview && !editing && historyDraft == nil && !confirming && rehearing?.stage != .working && models.installing == nil }
-  @Published var panelMoved = false
-  var resetPanelPosition: (() -> Void)?
-  func restorePanel() {
-    options.appearance = CapsuleAppearance(); panelMoved = false; resetPanelPosition?()
-  }
+  func restorePanel() { options.appearance = CapsuleAppearance() }
   @Published var previewing = false {
     didSet {
       if previewing != oldValue {
         if previewing {
-          screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+          screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.frame
         }
         onChange?()
       }
@@ -122,7 +118,6 @@ final class Desk: ObservableObject {
     return !recordingBusy && !confirming && e.id == lastID && e.inDraft == (editing || awaitingReview) && reviewText == e.to
   }
   @Published var insertedEarlier = false
-  @Published var openShortcut = false
   @Published var keyConnected = false
   @Published private(set) var activeTrigger:Trigger = .command
   var usingBackupKey:Bool { keyConnected && activeTrigger != options.trigger }
@@ -158,7 +153,6 @@ final class Desk: ObservableObject {
         rows = lib.records
       } catch { message = "设置未能保存：" + error.localizedDescription }
       if (oldValue.collectFrequent && !options.collectFrequent) || (oldValue.keepText && !options.keepText) { wordEpoch = UUID() }
-      if oldValue.appearance.position != options.appearance.position { panelMoved=false; resetPanelPosition?() }
       if oldValue.trigger != options.trigger { wasKey=nil; refresh(retryKeyboard:true) }
       if !options.keepText || !options.linkContext {
         conversation.reset()
@@ -233,11 +227,8 @@ final class Desk: ObservableObject {
   func warm() {
     let choice=options.model
     if models.installed.contains(choice) { selectModel(choice);return }
-    if choice.localProfile != nil {
-      // Existing 480 ms preferences predate model downloads. Keep them, including offline.
-      loadingModel=choice; preparing=true; ready=false
-      models.install(choice,onFailure:{ [weak self] in self?.message="原模型未能启用，已改用均衡听写。"; self?.selectModel(.bundled) }) { [weak self] in self?.selectModel(choice) }
-    } else { message="找不到所选模型，已改用均衡听写。";selectModel(.bundled) }
+    message="所选模型未安装，已使用均衡听写。"
+    selectModel(.bundled,remember:true)
   }
   func selectModel(_ choice: SpeechModel, remember: Bool = false) {
     guard !recordingBusy, models.installed.contains(choice) else { return }
@@ -403,7 +394,7 @@ final class Desk: ObservableObject {
     }
     rehearing = nil
     previewing = false
-    screen = target?.displayArea ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+    screen = target?.displayArea ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.frame
     let id = UUID()
     session = id
     skipDelivery = false
@@ -990,7 +981,7 @@ extension Desk {
     let model=ReplayRequest.model(for: activeModel ?? options.model, installed:models.installed)
     stopAudio(); pending?.cancel(); showEdits=false
     if inCapsule {
-      if phase != .result {screen=NSScreen.screens.first{$0.frame.contains(NSEvent.mouseLocation)}?.visibleFrame ?? screen}
+      if phase != .result {screen=NSScreen.screens.first{$0.frame.contains(NSEvent.mouseLocation)}?.frame ?? screen}
       previewing=false; phase = .result
     }
     else if phase == .result && !awaitingReview { dismiss() }
@@ -1021,7 +1012,7 @@ extension Desk {
     var pool=[ReadingChoice](); for c in result.choices where !pool.contains(c) && c.applying(to:result.text) != nil {pool.append(c)}
     if r.origin == .history && row?.text == nil { r.preview=result.text; r.previewChoices=pool; r.done("本次识别结果未保存"); return }
     if changed {
-      guard setReading(result.text,id:id,inDraft:r.forDraft,pool:pool,from:r.origin) else {r.fail("修订未保存，原稿未改。"); return}
+      guard setReading(result.text,id:id,inDraft:r.forDraft,pool:pool,from:r.origin) else {r.fail("修改未保存，原稿不变。"); return}
       if r.forDraft {learningBase=result.text}
       readingEdit=ReadingEdit(id:id,from:r.original,to:result.text,inDraft:r.forDraft,choices:before)
       r.done(r.forDraft ? "已校正审阅稿，尚未输入" : r.origin == .history ? "已校正这条记录" : (insertedEarlier ? status : "已校正本次定稿"))

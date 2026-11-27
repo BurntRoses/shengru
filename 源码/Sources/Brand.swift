@@ -1,19 +1,16 @@
 import AppKit
 import SwiftUI
 
-// Paired quotation marks: a spoken phrase becoming type. The same silhouettes resolve
-// at menu-bar size and on the glazed application tile; no separate miniature bitmap.
+// Five pulses, one silhouette. At menu and Finder sizes each edge is fitted to the pixel grid.
 enum BrandArtwork {
-  private static func mark(_ c: CGContext) {
-    for (x,y) in [(CGFloat(22),CGFloat(33)),(CGFloat(52),CGFloat(28))] {
-      c.saveGState(); c.translateBy(x:x,y:y)
-      c.beginPath(); c.move(to:CGPoint(x:12,y:0))
-      c.addCurve(to:CGPoint(x:24,y:13),control1:CGPoint(x:20,y:0),control2:CGPoint(x:24,y:5))
-      c.addCurve(to:CGPoint(x:4,y:41),control1:CGPoint(x:24,y:25),control2:CGPoint(x:15,y:36))
-      c.addQuadCurve(to:CGPoint(x:1,y:37),control:CGPoint(x:-1,y:42))
-      c.addQuadCurve(to:CGPoint(x:10,y:23),control:CGPoint(x:8,y:29))
-      c.addCurve(to:CGPoint(x:0,y:12),control1:CGPoint(x:4,y:23),control2:CGPoint(x:0,y:18))
-      c.addQuadCurve(to:CGPoint(x:12,y:0),control:CGPoint(x:0,y:0)); c.closePath(); c.fillPath(); c.restoreGState()
+  private static let pulses: [(CGFloat,CGFloat)] = [(0.43,0.65),(0.20,0.75),(0,1),(0.33,0.86),(0.42,0.66)]
+  private static func mark(_ c: CGContext, in box: CGRect, weight: CGFloat, pixel:CGFloat) {
+    func snap(_ n:CGFloat)->CGFloat { (n/pixel).rounded()*pixel }
+    let stroke=max(pixel,snap(weight)), step=(box.width-stroke)/4
+    for (i,p) in pulses.enumerated() {
+      let top=snap(box.minY+box.height*p.0), bottom=snap(box.minY+box.height*p.1)
+      let r=CGRect(x:snap(box.minX+CGFloat(i)*step),y:top,width:stroke,height:max(stroke,bottom-top))
+      c.addPath(CGPath(roundedRect:r,cornerWidth:stroke/2,cornerHeight:stroke/2,transform:nil));c.fillPath()
     }
   }
   private static let space = CGColorSpace(name:CGColorSpace.sRGB)!
@@ -31,8 +28,8 @@ enum BrandArtwork {
     let sheen=CGGradient(colorsSpace:space,colors:[ink(0.88,1,0.91,0.19),ink(0.75,0.98,0.89,0)] as CFArray,locations:nil)!
     c.drawRadialGradient(sheen,startCenter:.init(x:22,y:9),startRadius:0,endCenter:.init(x:22,y:9),endRadius:65,options:[])
     c.addPath(face); c.setStrokeColor(ink(0.90,1,0.94,0.22)); c.setLineWidth(0.85); c.strokePath()
-    c.translateBy(x:0,y:1); c.setFillColor(ink(0.02,0.19,0.17,0.38)); mark(c)
-    c.translateBy(x:0,y:-1); c.setFillColor(ink(0.98,1,0.92)); mark(c)
+    let box=CGRect(x:21,y:23,width:58,height:54), pixel=100/max(extent,1)
+    c.setFillColor(ink(0.98,1,0.94)); mark(c,in:box,weight:7.3,pixel:pixel)
   }
   static let badge = NSImage(size:.init(width:64,height:64),flipped:false) { rect in
     guard let c=NSGraphicsContext.current?.cgContext else {return false}; tile(c,extent:rect.width); return true
@@ -45,9 +42,9 @@ enum BrandArtwork {
       if recording {
         c.setFillColor(NSColor.black.cgColor); c.addPath(CGPath(roundedRect:rect.insetBy(dx:0.5,dy:0.6),cornerWidth:5,cornerHeight:5,transform:nil)); c.fillPath(); c.setBlendMode(.clear)
       }
-      let s:CGFloat = recording ? 0.225 : 0.275
-      c.translateBy(x:rect.midX-50.5*s,y:rect.midY-48.5*s); c.scaleBy(x:s,y:s)
-      c.setFillColor(NSColor.black.cgColor); mark(c); return true
+      let box=recording ? CGRect(x:3,y:2.5,width:15,height:13) : CGRect(x:1,y:1,width:19,height:16)
+      let pixel=1/max(1,abs(c.ctm.a)); c.setFillColor(NSColor.black.cgColor)
+      mark(c,in:box,weight:recording ? 1.8 : 2.15,pixel:pixel); return true
     }; image.isTemplate=true; return image
   }
 }

@@ -8,7 +8,7 @@ import Sparkle
   @Published private(set) var fraction: Double?
   struct Release: Equatable {
     let version: String, build: String, bytes: UInt64, notes: String
-    var label: String { "\(version) · 修订 \(build)" }
+    var label: String { version }
   }
   @Published private(set) var offer: Release?
   @Published var announceOffer = false

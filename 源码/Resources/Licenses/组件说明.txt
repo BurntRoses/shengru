@@ -1,6 +1,6 @@
 语音识别模型
 
-X-ASR-zh-en · Gilgamesh-J/X-ASR（Apache-2.0）。内置中英双语、带标点的 960 毫秒量化模型。同系列 480 毫秒和 1.92 秒量化版以编码器差分随应用提供，启用时在本机还原并校验官方发布文件。960 毫秒全精度版可选下载。模型由 sherpa-onnx 转为本机使用的格式，未重新训练。
+X-ASR-zh-en · Gilgamesh-J/X-ASR（Apache-2.0）。内置中英双语、带标点的 960 毫秒量化模型。同系列 480 毫秒、1.92 秒量化版和 960 毫秒全精度版仅在用户选择时下载，并校验官方发布文件。模型由 sherpa-onnx 转为本机使用的格式，未重新训练。
 原项目：https://github.com/Gilgamesh-J/X-ASR
 许可：X-ASR.txt
 

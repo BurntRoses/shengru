@@ -38,7 +38,7 @@ struct ReviewCard: View {
       }.frame(minHeight: 30)
       if let r=d.rehearing, r.origin == .dictate, !r.inCapsule { RehearingInline(d:d,review:r) }
       if d.last.isEmpty {
-        Label("听写结束后，在这里查看或修改文字。", systemImage: "text.cursor").font(.callout).foregroundStyle(
+        Label("暂无定稿", systemImage: "text.cursor").font(.callout).foregroundStyle(
           .secondary
         ).frame(maxWidth: .infinity, minHeight: 68)
       } else if let id=d.lastID {
@@ -135,7 +135,7 @@ struct MemoryPane: View {
 
       if d.memories.isEmpty {
         Spacer()
-        Text("还没有确认的词语修改").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+        Text("暂无改词记录").foregroundStyle(.secondary).frame(maxWidth: .infinity)
         Spacer()
       } else {
         ScrollView {
@@ -182,7 +182,7 @@ struct ModelPane: View {
   var body: some View {
     Surface(spacing:8) {
       PanelTitle(title:"本地识别模型")
-      Text("内置模型可离线使用。下载其他模型需要联网。").font(.callout).foregroundStyle(.secondary)
+      Label("离线运行",systemImage:"internaldrive").font(.callout).foregroundStyle(.secondary)
       ForEach(SpeechModel.allCases,id:\.self) { model in
         Divider().padding(.vertical,3)
         HStack(spacing:10) {
@@ -195,9 +195,8 @@ struct ModelPane: View {
           else if shelf.installed.contains(model) {
             Button("使用") { d.selectModel(model,remember:true) }.deskAction().disabled(d.recordingBusy || d.preparing)
             if model != .bundled { IconAction(symbol:"trash",title:"移除"+model.title) { removing=model }.disabled(d.preparing || shelf.installing != nil) }
-          } else if shelf.installing == model && model.localProfile != nil { ProgressView().controlSize(.small).accessibilityLabel("正在启用") }
-          else if shelf.installing != model {
-            Button(model.localProfile == nil ? "下载" : "启用") { shelf.install(model) {} }.deskAction().disabled(shelf.installing != nil).help(model.cost)
+          } else if shelf.installing != model {
+            Button("下载") { shelf.install(model) }.deskAction().disabled(shelf.installing != nil).help(model.cost)
           }
         }
         if shelf.installing == model, let value=shelf.progress { HStack { ProgressView(value:value).tint(.inkMint); Text(shelf.verifying ? "校验中" : "\(Int(value*100))%").font(.caption.monospacedDigit()); Button("取消") { shelf.cancel() }.deskAction() } }
@@ -229,7 +228,7 @@ struct LiveLine: View {
           ScrollView { VStack(alignment:.leading,spacing:0) { StreamTail(d:d); Color.clear.frame(height:1).id("end") }.frame(maxWidth:.infinity,alignment:.leading) }
             .scrollIndicators(.hidden).onChange(of:d.stable+d.tail,initial:true) { _,_ in reader.scrollTo("end",anchor:.bottom) }
         }
-      } else { Text("说话时，文字会显示在这里。").foregroundStyle(.secondary); Spacer() }
+      } else { Text("等待听写").foregroundStyle(.secondary); Spacer() }
     }.font(.body).frame(maxWidth:.infinity,minHeight:32,maxHeight:32,alignment:.topLeading)
   }
 }
@@ -240,7 +239,7 @@ struct CaptureWave: View {
 struct CaptureCaption: View {
   @ObservedObject var d:Desk
   var body:some View {
-    Text(d.phase == .listen ? clockText(d.seconds) + (d.handsFree ? " · 再按一次结束" : "") : d.options.reviewFirst ? "结束后审阅，确认后定稿。" : d.options.autoInsert ? "结束后，文字会输入到光标处。" : "结束后，在悬浮窗复制文字。")
+    Text(d.phase == .listen ? clockText(d.seconds) + (d.handsFree ? " · 再按一次结束" : "") : d.options.reviewFirst ? (d.options.autoInsert ? "确认后输入" : "结束后审阅") : d.options.autoInsert ? "松开即可输入" : "在悬浮窗复制文字")
       .font(.callout).foregroundStyle(.secondary).monospacedDigit()
   }
 }

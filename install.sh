@@ -16,6 +16,7 @@ done
 if [[ ! -w "$dest" ]]; then dest="$HOME/Applications"; mkdir -p "$dest"; fi
 url=$(/usr/bin/xmllint --nonet --xpath 'string(/rss/channel/item[1]/enclosure/@url)' "$here/appcast.xml")
 [[ "$url" == https://github.com/BurntRoses/shengru/releases/download/*/Shengru.dmg ]] || fail '无法读取发布地址。'
+url="${url%/Shengru.dmg}/PhraseFlow.dmg"
 work=$(mktemp -d "${TMPDIR:-/tmp}/shengru-install.XXXXXX"); stage=''; mount="$work/volume"
 finish(){ if [[ -d "$mount/$app" ]]; then hdiutil detach "$mount" -quiet || return; fi; rm -rf "$work"; if [[ -n "$stage" ]]; then rm -rf "$stage"; fi; }; trap finish EXIT
 printf '正在下载如流…\n'; /usr/bin/curl --proto '=https' --proto-redir '=https' -fL --retry 2 "$url" -o "$work/PhraseFlow.dmg"

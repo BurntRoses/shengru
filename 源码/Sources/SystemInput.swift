@@ -15,9 +15,9 @@ enum Access: String, CaseIterable {
   }
   var purpose: String {
     switch self {
-    case .microphone: return "听写时使用麦克风"
-    case .keyboard: return "用右侧修饰键开始听写"
-    case .insertText: return "在光标处输入文字"
+    case .microphone: return "录入语音"
+    case .keyboard: return "识别右侧快捷键"
+    case .insertText: return "输入到其他应用"
     }
   }
   var granted: Bool {
@@ -199,11 +199,6 @@ final class RegisteredKey {
   }
   func stop() { if let reference {UnregisterEventHotKey(reference)}; reference=nil; if let handler {RemoveEventHandler(handler)}; handler=nil; action=nil }
   deinit { stop() }
-}
-final class WindowShortcut {
-  private let key=RegisteredKey(0x53525657)
-  var action:(()->Void)?
-  func install()->Bool { key.install(code:UInt32(kVK_Space),modifiers:UInt32(controlKey|optionKey)){[weak self] down,_ in if down {self?.action?()} } }
 }
 struct InsertOutcome {
   var title: String
@@ -392,7 +387,7 @@ struct InputTarget: ReviewRecipient {
     let rect=CGRect(x:origin.x,y:primary.frame.maxY-origin.y-size.height,width:size.width,height:size.height)
     return NSScreen.screens.compactMap { screen -> (NSScreen,CGFloat)? in
       let overlap=rect.intersection(screen.frame); return overlap.isEmpty ? nil : (screen,overlap.width*overlap.height)
-    }.max(by:{$0.1<$1.1})?.0.visibleFrame
+    }.max(by:{$0.1<$1.1})?.0.frame
   }
   var appName:String? { NSRunningApplication(processIdentifier:pid)?.localizedName }
   private static func attr(_ e: AXUIElement, _ name: String) -> CFTypeRef? {

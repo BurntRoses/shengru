@@ -5,11 +5,10 @@ import UniformTypeIdentifiers
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
   private var statusItem: NSStatusItem!, desk: Desk!, capsule: CapsuleController!,
     window: NSWindow?, refreshTimer: Timer?, watches: [NSObjectProtocol] = []
-  private let menu = NSMenu(), launcher = WindowShortcut()
+  private let menu = NSMenu()
   private var welcome: NSWindow?
   private var finishingForQuit = false, removingApp = false, showHighlights = false
   private var releaseWindow:NSWindow?
-  private var nextShortcutAttempt = Date.distantPast
   func applicationDidFinishLaunching(_ notification: Notification) {
     let bundle=Bundle.main.bundleURL.standardizedFileURL
     guard Installation.prepare(bundle) else {
@@ -28,6 +27,7 @@ import UniformTypeIdentifiers
       NSApp.terminate(nil)
       return
     }
+    NSApp.setActivationPolicy(.regular)
     installMenu()
     capsule = CapsuleController(desk)
     desk.onChange = { [weak self] in self?.capsule.sync() }
@@ -36,8 +36,6 @@ import UniformTypeIdentifiers
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     desk.openGuide = { [weak self] in self?.onboard() }
     desk.uninstall = { [weak self] in self?.removeInstallation() }
-    launcher.action = { [weak self] in self?.open(.dictate) }
-    desk.openShortcut = launcher.install()
     menu.autoenablesItems = false
     menu.delegate = self
     statusItem.menu = menu
@@ -66,14 +64,10 @@ import UniformTypeIdentifiers
     refreshTimer = Timer.scheduledTimer(withTimeInterval:2, repeats:true) { [weak self] _ in
       MainActor.assumeIsolated {
       guard let self else { return }; self.desk.refresh(); self.presentReleaseIfNeeded()
-      if !self.desk.openShortcut && Date() >= self.nextShortcutAttempt {
-        self.nextShortcutAttempt = Date().addingTimeInterval(15)
-        if self.launcher.install() { self.desk.openShortcut = true }
-      }
       }
     }
     showHighlights=desk.updates.needsHighlights(firstUse:!desk.options.welcomed)
-    open(.dictate)
+    if !desk.options.welcomed { onboard() } else if showHighlights { open(.dictate) }
     desk.updates.check(quiet:true)
   }
   private func installMenu() {
@@ -83,7 +77,7 @@ import UniformTypeIdentifiers
     let editItem=NSMenuItem(); main.addItem(editItem); let e=NSMenu(title:"编辑"); editItem.submenu=e
     for (label,selector,key) in [("撤销","undo:","z"),("重做","redo:","Z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")] { e.addItem(withTitle:label,action:Selector(selector),keyEquivalent:key) }
     let win=NSMenuItem(); main.addItem(win); let w=NSMenu(title:"窗口"); win.submenu=w
-    w.addItem(withTitle:"打开听写",action:#selector(home),keyEquivalent:"1").target=self
+    w.addItem(withTitle:"打开听写",action:#selector(home),keyEquivalent:"").target=self
     w.addItem(withTitle:"最小化",action:#selector(NSWindow.performMiniaturize(_:)),keyEquivalent:"m"); w.addItem(withTitle:"关闭窗口",action:#selector(NSWindow.performClose(_:)),keyEquivalent:"w"); NSApp.windowsMenu=w; NSApp.mainMenu=main
   }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool { false }
@@ -162,6 +156,7 @@ import UniformTypeIdentifiers
   }
   func open(_ page: Page) {
     if let welcome, welcome.isVisible { Self.present(welcome); return }
+    guard desk.options.welcomed else { onboard(); return }
     desk.page = page
     if page == .dictate, desk.panelEditing { desk.editLast(open:false) }
     if page == .dictate && desk.rehearing == nil && desk.awaitingReview && !desk.editing { desk.editLast(open: false) }
@@ -186,7 +181,7 @@ import UniformTypeIdentifiers
       w.delegate = self
       window = w
     }
-    if let window { Self.present(window) }; if !desk.options.welcomed { onboard() }
+    if let window { Self.present(window) }
   }
   private func onboard() {
     if let welcome, welcome.isVisible { Self.present(welcome); return }
@@ -194,13 +189,15 @@ import UniformTypeIdentifiers
       contentRect: NSRect(x: 0, y: 0, width: 460, height: 365), styleMask: [.titled, .closable],
       backing: .buffered, defer: false)
     w.title = "如流使用引导"
+    w.titleVisibility = .hidden
+    w.titlebarAppearsTransparent = true
     w.collectionBehavior = [.moveToActiveSpace,.fullScreenAuxiliary]
     w.isReleasedWhenClosed = false
     let v = WelcomeView(d: desk) { [weak self] in
       guard let s = self else { return }
       s.desk.options.welcomed = true
       s.welcome?.orderOut(nil)
-      s.open(.dictate)
+      if let w=s.window, w.isVisible { Self.present(w) } else { NSApp.hide(nil) }
     }
     let root = NSHostingView(rootView: v)
     w.contentView = root
@@ -223,7 +220,7 @@ import UniformTypeIdentifiers
   }
   private func removeInstallation() {
     guard desk.allowsUpdateRestart,!desk.updates.busy else { return }
-    let a=NSAlert();a.messageText="卸载如流？";a.informativeText="仅移除应用会保留听写记录和设置，重新安装后可以继续使用。"
+    let a=NSAlert();a.messageText="卸载如流？";a.informativeText="仅移除应用会保留记录和设置。卸载后，程序坞可能短暂刷新。"
     a.addButton(withTitle:"取消");a.addButton(withTitle:"仅移除应用");a.addButton(withTitle:"连同本机资料删除…")
     let choice=a.runModal(); guard choice == .alertSecondButtonReturn || choice == .alertThirdButtonReturn else {return}
     let erase=choice == .alertThirdButtonReturn
@@ -234,8 +231,9 @@ import UniformTypeIdentifiers
     guard Installation.installed(bundle), Bundle.main.bundleIdentifier == Installation.id else {return}
     do {try FileManager.default.trashItem(at:bundle,resultingItemURL:nil)} catch {NSAlert(error:error).runModal();return}
     removingApp=true;refreshTimer?.invalidate();desk.shutdown()
+    NSApp.setActivationPolicy(.accessory)
     if erase { do {try Installation.eraseData(library:desk.lib.root,home:FileManager.default.homeDirectoryForCurrentUser,domain:Installation.id,defaults:.standard)} catch {NSAlert(error:error).runModal()} }
-    NSApp.terminate(nil)
+    DispatchQueue.main.async { Installation.clearDockRecent(at:bundle); NSApp.terminate(nil) }
   }
   func windowWillClose(_ notification: Notification) { desk?.stopAudio(); desk?.previewing = false }
   func applicationShouldTerminate(_ sender:NSApplication) -> NSApplication.TerminateReply {
@@ -264,13 +262,12 @@ import UniformTypeIdentifiers
     return true
   }
   func applicationWillTerminate(_ notification: Notification) {
-    if !removingApp {desk?.shutdown()}
+    if !removingApp {desk?.shutdown();NSApp.setActivationPolicy(.accessory)}
     refreshTimer?.invalidate()
     for t in watches { NSWorkspace.shared.notificationCenter.removeObserver(t) }
   }
 }
 let app = NSApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
-app.setActivationPolicy(.regular)
 app.delegate = delegate
 app.run()

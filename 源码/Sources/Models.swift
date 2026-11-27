@@ -5,10 +5,9 @@ import Combine
 enum SpeechModel: String, Codable, CaseIterable {
   case extended, standard, long, precision, mandarinXL
   static let bundled: Self = .extended
-  var localProfile: String? { self == .standard ? "480" : self == .long ? "1920" : nil }
   var title: String { switch self { case .standard:return "快速听写"; case .extended:return "均衡听写"; case .long:return "长句听写"; case .precision:return "全精度中英听写"; case .mandarinXL:return "普通话大模型" } }
-  var caption: String { switch self { case .standard:return "中英双语 · 480 毫秒 · 离线启用"; case .extended:return "中英双语 · 960 毫秒 · 内置默认"; case .long:return "中英双语 · 1.92 秒 · 离线启用"; case .precision:return "中英双语 · 全精度 · 下载 584 MB"; case .mandarinXL:return "普通话 · Zipformer XL · 下载 598 MB" } }
-  var cost:String { switch self { case .standard:return "启用约占 169 MB，优先出字速度。"; case .extended:return ""; case .long:return "启用约占 169 MB，先听更长一段再出字。"; case .precision:return "安装约 615 MB；比快速听写更占内存。"; case .mandarinXL:return "安装约 771 MB；计算量更大，不适合中英混说。" } }
+  var caption: String { switch self { case .standard:return "中英双语 · 480 毫秒 · 下载 134 MB"; case .extended:return "中英双语 · 960 毫秒 · 内置默认"; case .long:return "中英双语 · 1.92 秒 · 下载 134 MB"; case .precision:return "中英双语 · 全精度 · 下载 584 MB"; case .mandarinXL:return "普通话 · Zipformer XL · 下载 598 MB" } }
+  var cost:String { switch self { case .standard:return "安装约 169 MB，优先出字速度。"; case .extended:return ""; case .long:return "安装约 169 MB，先听更长一段再出字。"; case .precision:return "安装约 615 MB；比快速听写更占内存。"; case .mandarinXL:return "安装约 771 MB；计算量更大，不适合中英混说。" } }
   var folder:String { switch self { case .extended:return "x-asr-960"; case .long:return "x-asr-1920"; case .precision:return "x-asr-960-fp32"; case .mandarinXL:return "zipformer-zh-xl"; case .standard:return "x-asr-480" } }
   var package:ModelPackage? {
     let stem="sherpa-onnx-x-asr-", mid="ms-streaming-zipformer-transducer-zh-en-punct-"
@@ -46,19 +45,6 @@ struct ModelPackage {
     let handle = try FileHandle(forReadingFrom:file); defer { try? handle.close() }; var hash = SHA256()
     while let block = try handle.read(upToCount:1 << 20), !block.isEmpty { try Task.checkCancellation(); hash.update(data:block) }
     return hash.finalize().map { String(format:"%02x",$0) }.joined()
-  }
-  // Expand the official encoder difference outside the signed bundle, then verify every file
-  // against the original release. Enabling a local profile must not create a network task.
-  func expandLocal(_ profile:String, builtin:URL, into stage:URL) throws {
-    let fm=FileManager.default
-    try fm.createDirectory(at:stage,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
-    for name in files.values where name != "encoder.onnx" { try fm.copyItem(at:builtin.appendingPathComponent(name),to:stage.appendingPathComponent(name)) }
-    let patch=builtin.deletingLastPathComponent().appendingPathComponent("Profiles/"+profile+".bsdiff")
-    let task=Process(); task.executableURL=URL(fileURLWithPath:"/usr/bin/bspatch")
-    task.arguments=[builtin.appendingPathComponent("encoder.onnx").path,stage.appendingPathComponent("encoder.onnx").path,patch.path]
-    try Task.checkCancellation();try task.run();task.waitUntilExit()
-    guard task.terminationStatus==0 else {throw VoiceFault.message("无法启用本地模型，请重新安装应用。")}
-    try validate(stage)
   }
   func unpack(_ archive: URL, into stage: URL) throws {
     let fm = FileManager.default
@@ -118,37 +104,32 @@ final class ModelShelf: ObservableObject, @unchecked Sendable {
 
   }
   func url(_ model: SpeechModel) -> URL { model == .bundled ? builtin : folder.appendingPathComponent(model.folder) }
-  func install(_ model:SpeechModel, onFailure: (() -> Void)? = nil, complete: @escaping () -> Void) {
+  func install(_ model:SpeechModel) {
     guard job == nil, !installed.contains(model), let pack=model.package else { return }
-    let id = UUID(), folder = self.folder, dest = url(model), builtin = self.builtin
-    installing=model; token = id; progress = model.localProfile == nil ? 0 : nil; verifying = false; note = ""
+    let id = UUID(), folder = self.folder, dest = url(model)
+    installing=model; token = id; progress = 0; verifying = false; note = ""
     job = Task.detached(priority:.utility) { [weak self] in
       let fm = FileManager.default, work = folder.appendingPathComponent(".install-" + id.uuidString)
       let stage = work.appendingPathComponent("Speech"), archive = work.appendingPathComponent("archive")
       defer { try? fm.removeItem(at:work) }
       do {
         try fm.createDirectory(at:work, withIntermediateDirectories:true, attributes:[.posixPermissions:0o700])
-        let required:Int64 = model.localProfile != nil ? 185_000_000 : pack.bytes*3
+        let required:Int64 = pack.bytes*3
         if let free = try? folder.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage, free < required { throw VoiceFault.message("需要约 \(required/1_000_000) MB 可用空间。") }
-        if let profile=model.localProfile {
-          try pack.expandLocal(profile,builtin:builtin,into:stage)
-        } else {
-          let transfer = ArchiveTransfer(package:pack,destination:archive) { [weak self] value in DispatchQueue.main.async { [weak self] in if self?.token == id, self?.verifying == false { self?.progress = value } } }
-          try await transfer.fetch()
-          try Task.checkCancellation()
-          await MainActor.run { [weak self] in if self?.token == id { self?.progress = 1; self?.verifying = true } }
-          try pack.unpack(archive, into:stage)
-        }
+        let transfer = ArchiveTransfer(package:pack,destination:archive) { [weak self] value in DispatchQueue.main.async { [weak self] in if self?.token == id, self?.verifying == false { self?.progress = value } } }
+        try await transfer.fetch(); try Task.checkCancellation()
+        await MainActor.run { [weak self] in if self?.token == id { self?.progress = 1; self?.verifying = true } }
+        try pack.unpack(archive, into:stage)
         // Never activate a partially extracted model. Cancellation and promotion share the main queue.
         try await MainActor.run { [weak self] in
           guard let self, self.token == id, !Task.isCancelled else { throw CancellationError() }
           let fm = FileManager.default
           if fm.fileExists(atPath: dest.path) { try fm.removeItem(at:dest) }
-          try fm.moveItem(at:stage,to:dest); self.installed.insert(model); self.reset(); complete()
+          try fm.moveItem(at:stage,to:dest); self.installed.insert(model); self.reset()
         }
       } catch {
         let cancelled = Task.isCancelled
-        await MainActor.run { [weak self] in guard let self, self.token == id else { return }; self.reset(); self.note = cancelled ? "已取消下载。" : "安装未完成：" + error.localizedDescription; onFailure?() }
+        await MainActor.run { [weak self] in guard let self, self.token == id else { return }; self.reset(); self.note = cancelled ? "已取消下载。" : "安装未完成：" + error.localizedDescription }
       }
     }
   }

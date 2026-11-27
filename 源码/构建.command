@@ -42,10 +42,10 @@ if [ -z "$libs" ]; then
   fetch "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/$engine.tar.bz2" "$stage/engine.tar.bz2" '749acfadb36f044c5bb4fb11903a7fde2f8468cb3c183a05bb881326982d3af7'
   mkdir "$stage/engine";tar -xjf "$stage/engine.tar.bz2" --strip-components 1 -C "$stage/engine"; libs="$stage/engine/lib"
 fi
-cp "$speech"/{encoder.onnx,decoder.onnx,joiner.onnx,tokens.txt,bpe.model} "$dep/Speech/"; cp "$libs"/{libonnxruntime.dylib,libsherpa-onnx-c-api.dylib} "$dep/Frameworks/"; cp -R "$here/Resources/Profiles" "$dep/Profiles"
+cp "$speech"/{encoder.onnx,decoder.onnx,joiner.onnx,tokens.txt,bpe.model} "$dep/Speech/"; cp "$libs"/{libonnxruntime.dylib,libsherpa-onnx-c-api.dylib} "$dep/Frameworks/"
 (cd "$dep"; shasum -a 256 -c "$here/Resources/Dependencies.sha256" >/dev/null)
 for table in places.tsv words.tsv readings.tsv collections.tsv catalog.tsv catalog-readings.tsv topics.tsv senses.tsv review.tsv classics.tsv classical-sounds.tsv 来源.txt; do [ -s "$here/Resources/Vocabulary/$table" ] || { echo "缺少内置词库：$table" >&2; exit 1; }; done
-mv "$dep/Profiles" "$c/Resources/"; mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"; cp -R "$here/Resources/zh-Hans.lproj" "$here/Resources/en.lproj" "$c/Resources/"
+mv "$dep/Speech/"* "$c/Resources/Speech/"; mv "$dep/Frameworks/"* "$c/Frameworks/";cp -R "$here/Resources/Licenses" "$here/Resources/Vocabulary" "$c/Resources/";cp "$here/Resources/Info.plist" "$c/Info.plist"; cp -R "$here/Resources/zh-Hans.lproj" "$here/Resources/en.lproj" "$c/Resources/"
 xcrun swiftc "$here/Sources/Brand.swift" "$here/Resources/Icon.swift" -o "$stage/DrawIcon"
 "$stage/DrawIcon" "$stage/PhraseFlow.iconset"; iconutil -c icns "$stage/PhraseFlow.iconset" -o "$c/Resources/PhraseFlow.icns"
 # Pinned upstream binary, including its nested signatures and symlinks. An optional archive is still hashed.
