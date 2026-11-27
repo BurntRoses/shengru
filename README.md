@@ -4,7 +4,7 @@
 
 Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** 说话，松开输入。要连续说一段，短按开始，再按结束。不用打开主窗口。
 
-[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.23) · [使用手册](源码/使用说明.md) · [English](#english)
+[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.23) · [使用手册](https://github.com/BurntRoses/shengru/blob/v1.0.0-build.23/源码/使用说明.md) · [English](#english)
 
 <img src="docs/frost.png" width="570" alt="默认青瓷磨砂悬浮窗，顶部横条可拖动，下方显示听写文字">
 
@@ -64,4 +64,4 @@ Edit a finished passage in the panel or history. When available, replay the audi
 
 [Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg). Open the disk image, double-click **如流**, then choose **安装并打开** (Install and Open). The installed app opens the first-run guide. The terminal installer also opens the app when it finishes. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
 
-[构建 / Build](源码/使用说明.md#从源码构建) · [第三方许可 / Notices](源码/Resources/Licenses)
+[构建脚本 / Build script](源码/构建.command) · [第三方许可 / Notices](源码/Resources/Licenses)
