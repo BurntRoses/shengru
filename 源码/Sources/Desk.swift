@@ -75,6 +75,7 @@ final class Desk: ObservableObject {
   var copied: Bool { copiedText == copyText }
   private var copyReset: DispatchWorkItem?
   @Published var needsCopy = false
+  private var afterCopy: String?
   @Published var ready = false
   @Published var preparing = true
   @Published private(set) var activeModel: SpeechModel?
@@ -187,6 +188,7 @@ final class Desk: ObservableObject {
   private enum Press { case start(TimeInterval), stop }
   private var target: InputTarget?, session: UUID?, press: Press?, tag = UUID(),
     runOptions = Options(), runTerms: [Term] = []
+  var capsuleTextID: UUID { tag }
   private var sound: AVAudioPlayer?, playTimer: Timer?, wasKey: Bool?
   private var pending: DispatchWorkItem?
   init(_ lib: Library, model: URL, microphone: CaptureDevice = Microphone()) {
@@ -374,7 +376,7 @@ final class Desk: ObservableObject {
       if !preparing { warm() }
       return
     }
-    target = InputTarget.capture()
+    target = InputTarget.capture(prepare:options.autoInsert)
     if let reason = target?.recordingNotice {
       target = nil
       notice(reason)
@@ -400,6 +402,7 @@ final class Desk: ObservableObject {
     skipDelivery = false
     tag = id
     clearCopyFeedback()
+    afterCopy = nil
     fadeMark?.cancel(); lastMark=nil; liveMark=nil
     runOptions = options
     runTerms = terms.filter(policy.uses)
@@ -466,7 +469,7 @@ final class Desk: ObservableObject {
   // A newly activated web editor can publish its focused field just after key-down.
   // Bind only during this opening interval, never by looking for a new target at delivery.
   private func bindOpeningEditor(_ id:UUID,attempt:Int) {
-    let delays=[0.12,0.32,0.65]
+    let delays=[0.12,0.32,0.65,0.9]
     DispatchQueue.main.asyncAfter(deadline:.now()+delays[attempt]) { [weak self] in
       guard let self,self.session==id,self.phase == .listen,let initial=self.target,initial.waitingForEditor else {return}
       if let field=initial.resolveEditor() {
@@ -544,8 +547,8 @@ final class Desk: ObservableObject {
     self.readingChoices = heard.choices; self.readingEdit = nil
     self.learningBase=final; self.draft = final
     self.insertedEarlier = false
-    self.phase = .result
     if opts.reviewFirst {
+      self.phase = .result
       self.heldReview = entry
       self.awaitingReview = true
       self.editing = false
@@ -586,23 +589,24 @@ final class Desk: ObservableObject {
   }
   private func presentResult(_ out: InsertOutcome, id: UUID) {
     tag = id
-    phase = .result
     if out.readBack != nil {
       let revision=lastID,text=last
-      status="正在核对原处";icon="cursorarrow";needsCopy=false;onChange?()
+      phase = .finish; confirming=true; showEdits=false; needsCopy=false; onChange?()
       out.resolved { [weak self] receipt in
-        guard let self,self.tag==id,self.lastID==revision,self.last==text else {return}
-        if self.editing || self.phase != .result { self.delivered=receipt.passage.map{(revision ?? id,$0)};self.insertedEarlier = !receipt.keep;return }; self.presentResult(receipt,id:id)
+        guard let self,self.tag==id else {return}; self.confirming=false
+        guard self.lastID==revision,self.last==text else {return}; self.presentResult(receipt,id:id)
       };return
     }
+    afterCopy = out.afterCopy
     status = out.title
     icon = out.symbol
     needsCopy = out.keep
     insertedEarlier = !out.keep
     delivered = out.passage.flatMap { passage in lastID.map { ($0, passage) } }
-    flashReview(id)
+    showEdits = false
+    phase = out.keep ? .result : .idle
     onChange?(); onMenu?()
-    hide(in: resultDwell)
+    if out.keep {hide(in:resultDwell)} else {pending?.cancel()}
   }
   var resultDwell:Double { needsCopy && !copied ? max(10,options.appearance.hideDelay) : options.appearance.hideDelay }
   private func flashReview(_ id:UUID) {
@@ -665,7 +669,7 @@ final class Desk: ObservableObject {
       readingChoices=readingChoices.filter{$0.applying(to:text) != nil};readingEdit=nil;draft=text;last=text;stable=text;tail="";showEdits=false
       onChange?()
       if let to { confirming=true; to.insertReviewed(text) { [weak self] out in self?.confirming=false;self?.presentResult(out,id:UUID()) } }
-      else {presentResult(.available,id:UUID())}
+      else {presentResult(entry.target?.copyFallback ?? .available,id:UUID())}
     } else {
       // Release the panel's keyboard focus before attempting the original editor. Only a verified
       // insertion receipt may replace text; changing an older history entry never writes outside the app.
@@ -818,6 +822,9 @@ final class Desk: ObservableObject {
     }
     clearCopyFeedback()
     copiedText = text
+    if phase == .result, !editing, !awaitingReview, let afterCopy {
+      status=afterCopy; icon="checkmark"; onChange?(); hide(in:max(2,options.appearance.hideDelay))
+    }
     // Copying is orthogonal to recording and review: never commit a draft, insert it or dismiss the review.
     let reset = DispatchWorkItem { [weak self] in self?.copiedText = nil }
     copyReset = reset

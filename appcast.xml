@@ -2,14 +2,14 @@
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
 --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
  <channel><title>如流 · PhraseFlow</title><link>https://github.com/BurntRoses/shengru</link><description>macOS</description>
-  <item><title>如流 1.0.0</title><pubDate>Fri, 27 Nov 2026 10:12:31 +0000</pubDate>
-   <sparkle:version>23</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-   <description sparkle:descriptionFormat="plain-text">打开镜像中的如流，点“安装并打开”即可开始。终端安装后也会自动打开。
-如流按普通应用注册，保留菜单栏听写；重复安装只打开已有的应用。</description>
-   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/Shengru.dmg" type="application/octet-stream" length="156733536" sparkle:edSignature="AtBwrDZWEwfK+EjUzzSwB8I9Zo/9Em7g+IvziB4amiaSglRtNumiOk3Pi3rCVHjPsawEYG8kfgEH82cUEELAAw=="></enclosure>
+  <item><title>如流 1.0.0</title><pubDate>Sat, 28 Nov 2026 03:57:33 +0000</pubDate>
+   <sparkle:version>24</sparkle:version><sparkle:shortVersionString>1.0.0</sparkle:shortVersionString><sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+   <description sparkle:descriptionFormat="plain-text">微信里听写后，点「复制」，再按 ⌘V 粘贴。其他应用确认输入后，悬浮窗直接收起。
+首段输入能区分提示文字与正文。长段听写只显示两行，可上翻；换话题或明确列举时才分段。</description>
+   <enclosure url="https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.24/Shengru.dmg" type="application/octet-stream" length="156780210" sparkle:edSignature="bFVQVzgZkTz7JtlY4bdlf98Yz5ss8z1H1Feh5AYE/8XMp1hjdyb2EqEiX80caWagCbz1PeSBWpj4V0uESy6MBg=="></enclosure>
   </item>
  </channel>
 </rss><!-- sparkle-signatures:
-edSignature: N6btD6XAkDFeZ4BhYhAxM2LJw4QL4sBKmJVZj17Jjlx6xDWZtcvLdlG/FmcDMcjp+78aaiFqlDa8jEuwmcw/CA==
-length: 1334
+edSignature: Bx7DN46UDW2By58hIVbKYsjzeXIpOfqrb6P35JLkEGlEimEfI96l/FVJlel5oPCPaqKZK3dsbOLW1dTp164wCA==
+length: 1379
 -->

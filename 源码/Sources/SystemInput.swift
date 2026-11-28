@@ -75,7 +75,7 @@ final class Hotkey {
   private var held = false, key: Trigger = .shortcut
   private let registered = RegisteredKey(0x5352444B), escape = RegisteredKey(0x53524553)
   func duringDictation(_ active:Bool) {
-    if active && key.registered { _=escape.install(code:53,modifiers:0){[weak self] pressed,_ in if pressed { self?.cancel?() }} }
+    if active && registered.connected { _=escape.install(code:53,modifiers:0){[weak self] pressed,_ in if pressed { self?.cancel?() }} }
     else { escape.stop() }
   }
   var down: ((TimeInterval) -> Void)?, up: ((TimeInterval) -> Void)?, cancel: (() -> Void)?, chord: (() -> Void)?
@@ -204,13 +204,14 @@ struct InsertOutcome {
   var title: String
   var keep: Bool
   var symbol: String
+  var afterCopy: String? = nil
   var passage: InputTarget.Passage? = nil
   // A paste shortcut being posted is not an acknowledgement from the editor. Retry only
   // the read, never the write: delayed editors must not receive the transcript twice.
   var readBack: (() -> InsertOutcome?)? = nil
   func resolved(_ completion:@escaping(InsertOutcome)->Void) {
     guard let readBack else {completion(self);return}
-    let waits=[0.08,0.18,0.32]
+    let waits=[0.08,0.18,0.32,0.55]
     func check(_ i:Int) {
       if let result=readBack() {completion(result)}
       else if i==waits.count {completion(.unconfirmed)}
@@ -219,12 +220,60 @@ struct InsertOutcome {
   }
   static let permission = Self(title: "需允许辅助功能，可复制", keep: true, symbol: "hand.raised")
   static let available = Self(title: "可复制", keep: true, symbol: "doc.on.doc")
-  static let noCaret = Self(title: "无法确认输入位置，可复制", keep: true, symbol: "cursorarrow")
-  static let unconfirmed = Self(title: "原应用未确认输入，请核对原处", keep: true, symbol: "text.magnifyingglass")
+  static func manualPaste(in app: String? = nil) -> Self {
+    let hint = app.map { "在\($0)按 ⌘V" } ?? "按 ⌘V 粘贴"
+    return Self(title: "复制后，" + hint, keep: true, symbol: "doc.on.clipboard", afterCopy: hint)
+  }
+  static let unconfirmed = Self(title: "请先查看原处，避免重复粘贴", keep: true, symbol: "text.magnifyingglass")
   static let moved = Self(title: "光标已移动", keep: true, symbol: "cursorarrow")
   static let secure = Self(title: "受保护的输入框", keep: true, symbol: "lock")
   static let inserted = Self(title: "已输入", keep: false, symbol: "checkmark")
-  static let sent = Self(title: "已发送粘贴，请核对原处", keep: true, symbol: "arrow.turn.down.left")
+}
+
+// The owner is identified by Launch Services, never by inspecting the contents of a chat.
+enum InputRouting {
+  static func isWeChat(_ identifier: String?) -> Bool {
+    guard let id = identifier?.lowercased() else { return false }
+    return ["com.tencent.xinwechat", "com.tencent.wechat", "com.tencent.xin"].contains { id == $0 || id.hasPrefix($0 + ".") }
+  }
+  static func manualOnly(_ id: String?) -> Bool { id?.isEmpty != false || isWeChat(id) }
+}
+
+// Count and ranges from Accessibility are UTF-16 offsets. The caller checks the same
+// focused owner, window and editor on every read. A first-write receipt is display-only.
+struct InsertionEvidence {
+  enum Match: Equatable { case ordinary, wholeField }
+  let count: Int, selection: CFRange, text: String
+  private let differentBefore: Bool, differentSelection: Bool
+  init?(count: Int?, selection: CFRange?, text: String, before: (CFRange) -> String?) {
+    guard let count, count >= 0, !text.isEmpty,
+          let r = selection ?? (count == 0 ? CFRange(location:0,length:0) : nil),
+          r.location >= 0, r.location <= count, r.length >= 0, r.length <= count-r.location,
+          text.utf16.count <= Int.max - (count-r.length) else { return nil }
+    self.count=count; self.selection=r; self.text=text
+    // Some empty editors expose a prompt as the current text, without AXPlaceholderValue.
+    // Remember only whether a bounded prefix differed, not the previous field contents.
+    let n=text.utf16.count, k=min(256,min(n,count))
+    differentSelection = r.length != n || (before(r).map { !$0.utf16.elementsEqual(text.utf16) && $0.utf16.count == n } ?? false)
+    if r.length == 0, (r.location == 0 || r.location == count), k > 0, count == n {
+      differentBefore=before(CFRange(location:0,length:k)).map { $0.utf16.count == k && !$0.utf16.elementsEqual(text.utf16.prefix(k)) } ?? false
+    } else {differentBefore=count != n}
+  }
+  func match(count after: Int?, selection caret: CFRange?, read: (CFRange) -> String?) -> Match? {
+    guard let after, after >= 0 else {return nil}
+    let n=text.utf16.count, r=selection
+    func containsRun(at start:Int) -> Bool {
+      start <= after && n <= after-start && read(CFRange(location:start,length:n))?.utf16.elementsEqual(text.utf16) == true
+    }
+    if after == count-r.length+n,
+       caret.map({ ($0.location == r.location+n && $0.length == 0) || ($0.location == r.location && $0.length == n && differentSelection) }) ?? (count == 0),
+       containsRun(at:r.location) {return .ordinary}
+    // The entire displayed prompt disappeared; the entire new field is exactly the
+    // dictated text, with a collapsed caret at its end. No receipt for later replacement.
+    guard r.length == 0, r.location == 0 || r.location == count, differentBefore, after == n,
+          let caret, caret.location == n, caret.length == 0, containsRun(at:0) else { return nil }
+    return .wholeField
+  }
 }
 // Temporary clipboard transfer is one transaction. A later copy by the user always wins.
 final class PasteLease {
@@ -265,7 +314,7 @@ final class PasteLease {
     }
     restore = undo
     post()
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in
       if board.changeCount == revision { self?.finish() }
     }
     return true
@@ -273,15 +322,17 @@ final class PasteLease {
 }
 protocol ReviewRecipient {
   var editable: Bool { get }
+  var copyFallback: InsertOutcome { get }
   func insert(_ text: String) -> InsertOutcome
   func insertReviewed(_ text: String, complete: @escaping (InsertOutcome) -> Void)
 }
+extension ReviewRecipient { var copyFallback: InsertOutcome { .available } }
 struct InputTarget: ReviewRecipient {
   let pid: pid_t
   let element: AXUIElement?
   let window: AXUIElement?
   let range: CFRange?
-  enum Field { case unknown, nonText, editor, secure }
+  enum Field { case manual, unknown, nonText, editor, secure }
   private let field: Field
   // Returning after an explicit review needs a known selection. An uninterrupted live
   // take can also go to an identified editor that keeps its insertion point private.
@@ -294,10 +345,12 @@ struct InputTarget: ReviewRecipient {
     return selectionMarker != nil || fieldOnly
   }
   var protected: Bool { field == .secure }
+  var copyFallback: InsertOutcome { .manualPaste(in: manualApp) }
+  private var manualApp: String? = nil
   var recordingNotice: String? {
     switch field {
     case .secure: return "密码或受保护的输入框不支持听写"
-    case .unknown where IsSecureEventInputEnabled(): return "无法确认输入位置，请在听写窗口开始"
+    case .unknown where IsSecureEventInputEnabled(), .manual where IsSecureEventInputEnabled(): return "安全输入期间，请在如流中听写"
     default: return nil
     }
   }
@@ -416,27 +469,37 @@ struct InputTarget: ReviewRecipient {
     return (r,false)
   }
   private static var primed:(pid:pid_t,at:TimeInterval)?
-  static func prepareEditor(_ app:NSRunningApplication) {
-    guard app.processIdentifier != getpid(),Access.insertText.granted else {return}
+  private static func prepareEditor(_ app:NSRunningApplication) {
+    guard !InputRouting.manualOnly(app.bundleIdentifier), app.processIdentifier != getpid(),Access.insertText.granted else {return}
     let pid=app.processIdentifier,now=ProcessInfo.processInfo.systemUptime
     if let p=primed,p.pid==pid,now-p.at<10 {return}
-    primed=(pid,now)
     let id=app.bundleIdentifier ?? ""
     let chromium=["com.google.Chrome","org.chromium.Chromium","com.microsoft.edgemac","com.brave.Browser","company.thebrowser.Browser","com.vivaldi.Vivaldi","com.operasoftware.Opera"].contains {id==$0 || id.hasPrefix($0+".")}
     let electron=app.bundleURL.map{FileManager.default.fileExists(atPath:$0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)} ?? false
     guard chromium || electron else {return}
-    // Chromium may need two seconds to publish its tree. Prime on activation, before a
-    // hotkey, without querying the tab, selection or document. Electron uses a separate opt-in.
+    primed=(pid,now)
+    // Request the browser's accessibility tree only for a user-initiated dictation.
     let ax=AXUIElementCreateApplication(pid);AXUIElementSetMessagingTimeout(ax,0.18)
     _=attr(ax,kAXRoleAttribute)
     _=AXUIElementSetAttributeValue(ax,(electron ? "AXManualAccessibility" : "AXEnhancedUserInterface") as CFString,kCFBooleanTrue)
   }
-  static func capture() -> Self? {
-    guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid()
+  static func capture(expected: pid_t? = nil, prepare: Bool = false) -> Self? {
+    guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid(),
+          expected == nil || expected == app.processIdentifier
     else { return nil }
-    prepareEditor(app);return focused(in: app.processIdentifier)
+    return routedTarget(pid:app.processIdentifier, identifier:app.bundleIdentifier) {
+      if prepare {prepareEditor(app)}; return inspectEditor(in:app.processIdentifier)
+    }
   }
   fileprivate static func focused(in pid: pid_t) -> Self {
+    routedTarget(pid:pid, identifier:NSRunningApplication(processIdentifier:pid)?.bundleIdentifier) {inspectEditor(in:pid)}
+  }
+  static func routedTarget(pid:pid_t, identifier:String?, editor:()->Self) -> Self {
+    guard InputRouting.manualOnly(identifier) else {return editor()}
+    var local=Self(pid:pid,element:nil,window:nil,range:nil,field:.manual)
+    if InputRouting.isWeChat(identifier) {local.manualApp="微信"}; return local
+  }
+  private static func inspectEditor(in pid: pid_t) -> Self {
     let ax = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(ax, 0.22)
     let granted=Access.insertText.granted
@@ -458,11 +521,7 @@ struct InputTarget: ReviewRecipient {
       if let windowFocus,!generic(windowFocus) {return windowFocus}
       return systemFocus() ?? appFocus ?? windowFocus
     }
-    var el=granted ? focusedElement() : nil
-    if granted, generic(el) {
-      // Some browser-based editors expose their accessibility tree only on first demand.
-      if canSet(ax,"AXManualAccessibility") { _=AXUIElementSetAttributeValue(ax,"AXManualAccessibility" as CFString,kCFBooleanTrue); el=focusedElement() ?? el }
-    }
+    let el=granted ? focusedElement() : nil
     // Secure Event Input applies to the entire login session, not the focused field.
     // Inspect only metadata along the focus path before reading a caret, selection or text.
     // AppKit's canonical flag and the alternate spelling used by some editors are distinct.
@@ -509,7 +568,7 @@ struct InputTarget: ReviewRecipient {
     let win = granted ? (ownerWindow ?? (input ?? el).flatMap { elementAttr($0,kAXWindowAttribute) } ?? focusedWindow) : nil
     let position=input.map(selection), r=position?.range
     var target = Self(pid: pid, element: input, window: win, range: r, field: field)
-    if field == .unknown, granted, win != nil, generic(el), !IsSecureEventInputEnabled() {
+    if field == .unknown, granted, primed?.pid == pid, win != nil, generic(el), !IsSecureEventInputEnabled() {
       target.unresolved=true; target.focusContainer=el
     }
     if let el = input {
@@ -547,6 +606,14 @@ struct InputTarget: ReviewRecipient {
     }
     return a
   }
+  // Some controls expose their entire draft but not AXStringForRange. Only read AXValue
+  // if the requested run is already known to occupy that entire (bounded) field.
+  static func observedRun(_ r: CFRange, count:Int?, ranged:()->String?, whole:()->String?) -> String? {
+    if let run=ranged() {return run}
+    guard r.location==0, r.length>0, r.length==count, r.length<=16_384,
+          let run=whole(), run.utf16.count==r.length else {return nil}
+    return run
+  }
   static func copy(_ text: String, to p: NSPasteboard = .general) -> Bool {
     guard !text.isEmpty else { return false }
     p.clearContents()
@@ -569,7 +636,8 @@ struct InputTarget: ReviewRecipient {
   // A reviewed draft may return to its original app only on an explicit click. Recheck the same
   // window, editable element and selection after activation; a changed target always falls back to copy.
   func insertReviewed(_ text: String, complete: @escaping (InsertOutcome) -> Void) {
-    guard Access.insertText.granted else {complete(.permission);return};guard editable else { complete(.available); return }
+    guard field != .manual else {complete(copyFallback); return}
+    guard Access.insertText.granted else {complete(.permission);return};guard editable else { complete(copyFallback); return }
     let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
     if front == pid { complete(write(text,live:false)); return }
     guard front == getpid(), let app = NSRunningApplication(processIdentifier:pid) else { complete(.moved); return }
@@ -582,38 +650,45 @@ struct InputTarget: ReviewRecipient {
       else { DispatchQueue.main.asyncAfter(deadline:.now()+0.04) { attempt(left-1) } }
     }; attempt(15)
   }
-  func insert(_ text: String) -> InsertOutcome { defer {stopObserving()}; return write(text,live:true) }
+  func insert(_ text: String) -> InsertOutcome {
+    defer {stopObserving()}
+    return (unresolved ? resolveEditor() ?? self : self).write(text,live:true)
+  }
   private func write(_ text:String,live:Bool)->InsertOutcome {
     guard !text.isEmpty else { return .available }
+    guard field != .manual else {return copyFallback}
     if protected { return .secure }
-    guard Access.insertText.granted else {return .permission};guard live ? canInsertLive : editable, let old = element else { return .noCaret }
-    guard let now = Self.capture() else { return .moved }
+    guard Access.insertText.granted else {return .permission};guard live ? canInsertLive : editable, let old = element else { return copyFallback }
+    guard let now = Self.capture(expected:pid) else { return .moved }
     if now.protected { return .secure }
     guard sameCursor(as:now,live:live) else { return .moved }
     // Paste invokes the normal editing transaction in web fields (including input events
     // and undo). Never send Return, replace AXValue or paste blindly into a terminal.
-    func awaitingReceipt(_ fallback:InsertOutcome)->InsertOutcome {
-      guard let prior=now.originalLength, let r=now.range ?? (prior==0 ? CFRange(location:0,length:0) : nil),r.location<=prior,r.length<=prior-r.location else {return fallback}
-      let n=text.utf16.count,expected=prior-r.length+n
-      var out=fallback
+    func observe(_ e:AXUIElement,_ r:CFRange,_ count:Int?)->String? {
+      Self.observedRun(r,count:count,ranged:{Self.slice(e,r)},whole:{Self.attr(e,kAXValueAttribute) as? String})
+    }
+    let evidence=InsertionEvidence(count:now.originalLength,selection:now.range,text:text) {observe(old,$0,now.originalLength)}
+    func awaitingReceipt()->InsertOutcome {
+      var out=InsertOutcome.unconfirmed
+      guard let evidence else {return out}
       out.readBack={
-        guard let active=Self.capture(), now.sameEditor(as:active), let e=active.element,active.originalLength==expected,
-          active.range.map({ ($0.location==r.location+n && $0.length==0) || ($0.location==r.location && $0.length==n) }) ?? (prior==0),
-          let run=Self.slice(e,CFRange(location:r.location,length:n)),run.utf16.elementsEqual(text.utf16) else {return nil}
+        guard let active=Self.capture(expected:pid), now.sameEditor(as:active), let e=active.element, let count=active.originalLength,
+          let match=evidence.match(count:count,selection:active.range,read:{observe(e,$0,count)}) else {return nil}
         var confirmed=InsertOutcome.inserted
-        if let doc=now.document {confirmed.passage=Passage.verified(target:now,document:doc,start:r.location,text:text,count:expected)}
+        if match == .ordinary, let doc=now.document {confirmed.passage=Passage.verified(target:now,document:doc,start:evidence.selection.location,text:text,count:count)}
         return confirmed
       };return out
     }
     if !now.inWebEditor, !fieldOnly, Self.canSet(old, kAXSelectedTextAttribute) {
+      guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {return .moved}
       let write=AXUIElementSetAttributeValue(old,kAXSelectedTextAttribute as CFString,text as CFString)
-      if write == .success {return awaitingReceipt(.inserted)}
+      if write == .success {return awaitingReceipt()}
       // Some apps advertise a setter that they explicitly don't implement. Try paste only
       // for those replies; a timed-out write might already have inserted the whole text.
-      guard write == .attributeUnsupported || write == .notImplemented else {return Access.insertText.granted ? .unconfirmed : .permission}
+      guard write == .attributeUnsupported || write == .notImplemented else {return Access.insertText.granted ? awaitingReceipt() : .permission}
     }
-    let sent=paste(text) { Self.capture().map { self.sameCursor(as:$0,live:live) } ?? false }
-    return sent ? awaitingReceipt(.sent) : .available
+    let sent=paste(text) { Self.capture(expected:pid).map { self.sameCursor(as:$0,live:live) } ?? false }
+    return sent ? awaitingReceipt() : copyFallback
   }
   private func paste(_ text:String, stillHere:()->Bool)->Bool {
     guard let src=CGEventSource(stateID:.combinedSessionState),
@@ -650,7 +725,7 @@ extension InputTarget {
     fileprivate static func verified(target: InputTarget, document: Document, start: Int, text: String, count: Int) -> Self? {
       let receipt = Self(target: target, document: document, start: start, text: text, count: count)
       guard let e = target.element, InputTarget.canSet(e, kAXSelectedTextRangeAttribute),
-        receipt.acknowledged() else { return nil }
+        receipt.matches(selection:receipt.caret) else { return nil }
       return receipt
     }
     private func acknowledged()->Bool {
@@ -681,7 +756,7 @@ extension InputTarget {
         if atFront(),matches(selection:range) {_=InputTarget.select(caret,in:e)}; complete(.changed,nil);return
       }
       let updated=Self(target:target,document:document,start:start,text:value,count:count-range.length+value.utf16.count)
-      var pending=InsertOutcome.sent
+      var pending=InsertOutcome.unconfirmed
       pending.readBack={
         guard atFront(),updated.acknowledged() else {return nil}; var out=InsertOutcome.inserted;out.passage=updated;return out
       };pending.resolved { answer in complete(answer.passage == nil ? .unconfirmed : .replaced,answer.passage) }

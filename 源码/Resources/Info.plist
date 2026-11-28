@@ -24,12 +24,12 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>23</string>
+	<string>24</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>PhraseFlowReleaseNotes</key>
-	<string>打开镜像中的如流，点“安装并打开”即可开始。终端安装后也会自动打开。
-如流按普通应用注册，保留菜单栏听写；重复安装只打开已有的应用。</string>
+	<string>微信里听写后，点「复制」，再按 ⌘V 粘贴。其他应用确认输入后，悬浮窗直接收起。
+首段输入能区分提示文字与正文。长段听写只显示两行，可上翻；换话题或明确列举时才分段。</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

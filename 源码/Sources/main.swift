@@ -43,9 +43,6 @@ import UniformTypeIdentifiers
     statusIcon()
     desk.start()
     let nc = NSWorkspace.shared.notificationCenter
-    watches.append(nc.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] note in
-      MainActor.assumeIsolated {guard let d=self?.desk,d.options.autoInsert,let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {return}; InputTarget.prepareEditor(app)}
-    })
     for n in [
       NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification,
       NSWorkspace.screensDidSleepNotification,

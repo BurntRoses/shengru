@@ -552,6 +552,6 @@ enum Transcript {
       return input.replacing(
         #"(?i)([.!?])\s+(?=(?:second(?:ly)?|third(?:ly)?|next|finally),\s)"#, "$1\n\n")
     }
-    return input.replacing(#"([。！？])\s*(另外|再说|接下来|关于|最后补充)"#, "$1\n\n$2")
+    return input
   }
 }

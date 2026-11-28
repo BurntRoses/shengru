@@ -5,7 +5,7 @@ import SwiftUI
 // caret positioning, undo, selection and marked text (including uncommitted Chinese input).
 struct PassageEditor: NSViewRepresentable {
   let id: UUID, value: String, label: String
-  var size: CGFloat = 15, editable = true, editing = false, bottomAtEntry = false
+  var size: CGFloat = 15, editable = true, editing = false, bottomAtEntry = false, followsTail = false
   var compare:String? = nil
   var step: ((Int) -> Bool)? = nil
   var begin: () -> Bool, change: (String) -> Void, save: () -> Void, cancel: () -> Void
@@ -36,13 +36,14 @@ struct PassageEditor: NSViewRepresentable {
   }
   final class Reader: NSScrollView {
     let text = TextBox(), undoStack=UndoManager()
-    var config:PassageEditor?, renderedDiff:[ReviewRuns.Piece]?, token:UUID?, lastSize:CGFloat=0, lastWidth:CGFloat = -1
-    private var monitor:Any?
+    var config:PassageEditor?, renderedDiff:[ReviewRuns.Piece]?, token:UUID?, lastSize:CGFloat=0, lastViewport=NSSize.zero
+    private var monitor:Any?, scrollWatch:NSObjectProtocol?, followsNewest=true
     override init(frame:NSRect) {
       super.init(frame:frame);borderType = .noBorder;drawsBackground=false;hasVerticalScroller=true;autohidesScrollers=true;scrollerStyle = .overlay
       text.reader=self;text.isSelectable=true;text.isRichText=false;text.drawsBackground=false;text.focusRingType = .none;text.allowsUndo=true;text.isAutomaticQuoteSubstitutionEnabled=false;text.isAutomaticDashSubstitutionEnabled=false;text.isAutomaticTextReplacementEnabled=false;text.isAutomaticSpellingCorrectionEnabled=false
       text.isVerticallyResizable=true;text.isHorizontallyResizable=false;text.textContainerInset=NSSize(width:2,height:2);text.textContainer?.lineFragmentPadding=0;text.textContainer?.widthTracksTextView=true
       documentView=text
+      scrollWatch=NotificationCenter.default.addObserver(forName:NSScrollView.didLiveScrollNotification,object:self,queue:.main) { [weak self] _ in self?.userScrolled() }
     }
     required init?(coder:NSCoder){nil}
     override var undoManager:UndoManager? {undoStack}
@@ -66,9 +67,16 @@ struct PassageEditor: NSViewRepresentable {
     }
     var bottom:CGFloat {max(0,text.frame.height-contentView.bounds.height)}
     func scroll(to y:CGFloat) {contentView.scroll(to:NSPoint(x:0,y:y));reflectScrolledClipView(contentView)}
-    override func layout() {super.layout();if lastWidth != contentSize.width {fit()}}
+    private func userScrolled() {if config?.followsTail == true {followsNewest=bottom-contentView.bounds.minY <= 2}}
+    override func scrollWheel(with e:NSEvent) {super.scrollWheel(with:e);userScrolled()}
+    override func layout() {
+      super.layout(); if lastViewport != contentSize {fit()}
+      // A hosting view measures the reader at several sizes before it becomes visible.
+      // Reflow must not be mistaken for the user scrolling up.
+      if config?.followsTail == true, followsNewest, abs(contentView.bounds.minY-bottom)>0.5 {scroll(to:bottom)}
+    }
     func fit() {
-      let w=max(1,contentSize.width);lastWidth=contentSize.width
+      let w=max(1,contentSize.width);lastViewport=contentSize
       text.setFrameSize(NSSize(width:w,height:max(1,text.frame.height)))
       guard let m=text.layoutManager,let c=text.textContainer else {return};c.containerSize=NSSize(width:max(1,w-4),height:.greatestFiniteMagnitude);m.ensureLayout(for:c)
       text.setFrameSize(NSSize(width:w,height:max(ceil(m.usedRect(for:c).height)+5,contentSize.height)))
@@ -76,7 +84,9 @@ struct PassageEditor: NSViewRepresentable {
     func apply(_ c:PassageEditor) {
       let previous=config, new=token != c.id, oldCompare=previous?.editing == true ? nil : previous?.compare
       let compare=c.editing || c.compare==c.value ? nil : c.compare, font=NSFont.systemFont(ofSize:c.size,weight:.medium)
-      config=c;token=c.id;text.isEditable=c.editable;text.setAccessibilityLabel(c.label)
+      let y=contentView.bounds.minY
+      if new {followsNewest=true}
+      config=c;token=c.id;text.isEditable=c.editable;text.isSelectable = !c.followsTail;text.setAccessibilityLabel(c.label)
       let p=NSMutableParagraphStyle();p.lineSpacing=3
       let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:NSColor.labelColor,.paragraphStyle:p]
       let restyle=new || lastSize != c.size;lastSize=c.size
@@ -85,17 +95,25 @@ struct PassageEditor: NSViewRepresentable {
         if restyle || renderedDiff == nil || compare != oldCompare || previous?.value != c.value {
           let runs=ReviewRuns.transcriptDiff(compare,c.value), ink=NSMutableAttributedString(string:""); var first:Int?
           for r in runs { var a=attrs;if r.type != 0 {if first == nil {first=ink.length};a[.foregroundColor]=r.type<0 ? NSColor.systemRed : NSColor(Color.inkMint);if r.type<0 {a[.strikethroughStyle]=NSUnderlineStyle.single.rawValue} };ink.append(NSAttributedString(string:r.s,attributes:a)) }
-          renderedDiff=runs;text.textStorage?.setAttributedString(ink);fit();text.scrollRangeToVisible(NSRange(location:first ?? 0,length:0))
+          renderedDiff=runs;text.textStorage?.setAttributedString(ink);fit()
+          if !c.followsTail {text.scrollRangeToVisible(NSRange(location:first ?? 0,length:0))}
         }
       } else if !text.hasMarkedText() {
         let wasMarked=renderedDiff != nil;renderedDiff=nil
-        if restyle || wasMarked || text.string != c.value {text.textStorage?.setAttributedString(NSAttributedString(string:c.value,attributes:attrs));text.typingAttributes=attrs;text.defaultParagraphStyle=p;fit()}
+        if restyle || wasMarked || text.string != c.value {
+          if c.followsTail, !restyle, !wasMarked, let old=previous?.value, c.value.utf16.starts(with:old.utf16) {
+            // A committed prefix is immutable. Append without re-laying out the entire transcript.
+            let added=(c.value as NSString).substring(from:old.utf16.count)
+            text.textStorage?.append(NSAttributedString(string:added,attributes:attrs))
+          } else {text.textStorage?.setAttributedString(NSAttributedString(string:c.value,attributes:attrs))}
+          text.typingAttributes=attrs;text.defaultParagraphStyle=p;fit()
+        }
         if new {scroll(to:c.bottomAtEntry ? bottom : 0)}
       }
-      if lastWidth != contentSize.width {fit()}
-
+      if lastViewport != contentSize {fit()}
+      if c.followsTail {scroll(to:followsNewest ? bottom : min(bottom,y))}
     }
-    deinit {if let monitor {NSEvent.removeMonitor(monitor)}}
+    deinit {if let monitor {NSEvent.removeMonitor(monitor)};if let scrollWatch {NotificationCenter.default.removeObserver(scrollWatch)}}
   }
   func makeNSView(context:Context) -> Reader {Reader(frame:.zero)}
   func updateNSView(_ v:Reader,context:Context) {v.apply(self)}

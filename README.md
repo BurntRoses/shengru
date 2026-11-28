@@ -2,18 +2,22 @@
 
 # 如流 · PhraseFlow
 
-Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** 说话，松开输入。要连续说一段，短按开始，再按结束。不用打开主窗口。
+Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** 说话，松开完成听写。要连续说一段，短按开始，再按结束。不用打开主窗口。
 
-[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.23) · [使用手册](https://github.com/BurntRoses/shengru/blob/v1.0.0-build.23/源码/使用说明.md) · [English](#english)
+[下载 PhraseFlow.dmg](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.24/PhraseFlow.dmg) · [版本说明](https://github.com/BurntRoses/shengru/releases/tag/v1.0.0-build.24) · [English](#english)
 
-<img src="docs/frost.png" width="570" alt="默认青瓷磨砂悬浮窗，顶部横条可拖动，下方显示听写文字">
+<img src="docs/frost.png" width="570" alt="如流听写悬浮窗，当前行清晰显示，上一行稍淡">
 
 ## 听写与改词
 
-- **原位输入**：浮窗随说随显，不抢光标。可以点定稿直接改，按 **⌘↩** 保存；原文和光标仍匹配时才写回，一旦换了位置，就留在本机供复制。
+- **原位输入**：在支持的输入框里，写入确认后悬浮窗直接收起。要改字，可从菜单栏打开上次听写，或编辑历史记录。
+- **在微信里听写**：说完点「复制」，在自己的聊天框按 **⌘V**。如流不读取微信窗口、不操作联系人，也不发送消息。其他应用不提供可用输入框时，同样可以手动粘贴。
+- **长段听写**：悬浮窗正文最多两行。上翻时保持阅读位置，回到底部再跟随新字。停顿只影响标点，换话题或明确列举时才分段。
 - **原声复听**：对某个词不满意？保留录音后点「增强识别」，再听一遍原声。候选写法点一下就换，不必重说整段。浮窗已收起时，可从菜单栏打开上次听写。
 - **整理与词库**：四档整理从保留原话到分点行文。可导入自己的词库，也可让如流记住反复确认的改词。第一次识别不套用个人改词规则。
 - **文字与录音**：各自选择是否保存、保留多少条。长录音分节写入，历史里仍是一段，可编辑或回听。
+
+<img src="docs/clipboard.png" width="340" alt="听写完成后，可点复制，再到微信按 ⌘V。">
 
 <details><summary>查看听写首页</summary>
 
@@ -50,7 +54,7 @@ Mac 上的本地中英文听写。把光标放进输入框，按住**右 ⌘** �
 也可以用终端安装，完成后会自动打开。已经安装时，只打开已有的如流：
 
 ```sh
-git clone --depth 1 --branch v1.0.0-build.23 https://github.com/BurntRoses/shengru.git PhraseFlow
+git clone --depth 1 --branch v1.0.0-build.24 https://github.com/BurntRoses/shengru.git PhraseFlow
 bash PhraseFlow/install.sh
 ```
 
@@ -58,10 +62,10 @@ bash PhraseFlow/install.sh
 
 ## English
 
-**PhraseFlow is offline Chinese and English dictation for Mac.** Hold **Right Command** to dictate into the current text field; release to insert. For a longer passage, tap once to start and again to finish. The menu bar and floating transcript work without the main window.
+**PhraseFlow is offline Chinese and English dictation for Mac.** Hold **Right Command** to dictate; release to finish. In supported editors, the panel closes once insertion is confirmed. In WeChat, click Copy and press **⌘V** yourself. PhraseFlow does not inspect or control the chat window. For a longer passage, tap once to start and again to finish. The menu bar and floating transcript work without the main window.
 
-Edit a finished passage in the panel or history. When available, replay the audio to check a word, then click a suggested spelling to apply it. The frosted panel remembers its position and can sit near the bottom edge in full screen. One balanced model is bundled; four others are optional downloads. Dictation, recordings and personal vocabulary stay on your Mac.
+Long passages use a two-line panel; scroll up to read without losing your place. A pause alone does not start a new paragraph. Edit a finished passage from the menu bar or history. When available, replay the audio to check a word, then click a suggested spelling to apply it. The frosted panel remembers its position and can sit near the bottom edge in full screen. One balanced model is bundled; four others are optional downloads. Dictation, recordings and personal vocabulary stay on your Mac.
 
-[Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.23/PhraseFlow.dmg). Open the disk image, double-click **如流**, then choose **安装并打开** (Install and Open). The installed app opens the first-run guide. The terminal installer also opens the app when it finishes. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
+[Download PhraseFlow 1.0.0](https://github.com/BurntRoses/shengru/releases/download/v1.0.0-build.24/PhraseFlow.dmg). Open the disk image, double-click **如流**, then choose **安装并打开** (Install and Open). The installed app opens the first-run guide. The terminal installer also opens the app when it finishes. For macOS 14+ on Apple silicon and Intel; interface in Simplified Chinese. **This pre-release is not Apple-notarized.** See [Apple’s first-launch guidance](https://support.apple.com/en-us/102445).
 
 [构建脚本 / Build script](源码/构建.command) · [第三方许可 / Notices](源码/Resources/Licenses)

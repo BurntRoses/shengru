@@ -157,11 +157,9 @@ private struct HandleArea: NSViewRepresentable {
   func makeNSView(context: Context) -> Handle { Handle() }
   func updateNSView(_ v: Handle, context: Context) {}
 }
-private typealias InkState<Value> = SwiftUI.State<Value>
 struct CapsuleView: View {
   @ObservedObject var desk: Desk
   var sample = false
-  @InkState private var inkOpacity = 1.0
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.accessibilityReduceTransparency) var opaque
   var preview: Bool { sample || (desk.previewing && desk.phase == .idle) }
@@ -170,7 +168,7 @@ struct CapsuleView: View {
     if preview { return "悬浮窗预览" }; if desk.panelEditing { return "修改定稿" }
     switch desk.phase {
     case .listen: return desk.handsFree ? "持续听写" : "正在听写"
-    case .finish: return "正在校对"
+    case .finish: return desk.confirming ? "正在输入" : "正在校对"
     case .notice, .result: return desk.status
     case .idle: return "正在听写"
     }
@@ -253,10 +251,14 @@ struct CapsuleView: View {
         } else if desk.phase == .result && desk.panelEditing {
           PanelEditActions(d:desk)
         } else if desk.phase == .result {
-          Button { desk.rehear(inCapsule:true) } label: {
-            Text("增强识别").font(.system(size: 11, weight: .semibold)).fixedSize().padding(.horizontal, 8)
-              .frame(height: CapsuleMetrics.header).background(Color.inkMint.opacity(0.12), in: Capsule())
-          }.buttonStyle(.plain).foregroundStyle(Color.inkMint).keyCue().help("在这里重听并校正用词")
+          if p.width < 410 {
+            capsuleButton("waveform.badge.magnifyingglass", "增强识别") {desk.rehear(inCapsule:true)}
+          } else {
+            Button { desk.rehear(inCapsule:true) } label: {
+              Text("增强识别").font(.system(size: 11, weight: .semibold)).fixedSize().padding(.horizontal, 8)
+                .frame(height: CapsuleMetrics.header).background(Color.inkMint.opacity(0.12), in: Capsule())
+            }.buttonStyle(.plain).foregroundStyle(Color.inkMint).keyCue().help("在这里重听并校正用词")
+          }
           if desk.awaitingReview { Button(desk.canSendReviewed ? "确认并输入" : "确认定稿") {desk.confirmReview()}.deskAction(primary:true) }
           copyButton
           if !desk.awaitingReview { capsuleButton("xmark", "收起") { desk.dismiss() } }
@@ -267,30 +269,11 @@ struct CapsuleView: View {
       if !preview, desk.phase == .result, let id=desk.lastID {
         PanelWords(d:desk,id:id,original:desk.showEdits ? desk.raw : nil)
       } else if hasWords {
-        ScrollViewReader { proxy in
-          ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 0) {
-              Group {
-                if desk.showEdits && !sample {
-                  Text(ReviewRuns.styled(desk.raw, desk.last))
-                } else if !sample, let before=desk.inkBefore(stable+tail) {
-                  Text(ReviewRuns.styled(before,stable+tail))
-                } else {
-                  Text("\(Text(stable).foregroundColor(.primary))\(Text(tail).foregroundColor(.secondary))")
-                }
-              }.opacity(inkOpacity).onChange(of: desk.showEdits) { _, _ in
-                guard p.animate && !reduceMotion else { return }
-                inkOpacity = 0.76
-                withAnimation(.easeOut(duration: 0.16)) { inkOpacity = 1 }
-              }
-              Color.clear.frame(height: 1).id("bottom")
-            }.frame(maxWidth: .infinity, alignment: .leading)
-          }.scrollIndicators(.hidden).onChange(of: stable + tail, initial: true) { _, _ in
-            proxy.scrollTo("bottom", anchor: .bottom)
-          }
-        }.font(.system(size: p.typeSize, weight: .medium)).lineSpacing(CapsuleMetrics.leading)
-          .accessibilityLabel(
-            stable + tail)
+        let words = stable + tail
+        PassageEditor(id:desk.capsuleTextID, value:words, label:"听写正文", size:p.typeSize,
+          editable:false, bottomAtEntry:true, followsTail:true, compare:sample ? nil : desk.inkBefore(words),
+          begin:{false}, change:{_ in}, save:{}, cancel:{})
+          .modifier(CapsuleLineInk(size:p.typeSize,enabled:true))
       }
       }
     }.padding(.horizontal,CapsuleMetrics.insetX).padding(.top,CapsuleMetrics.dragHeight).padding(.bottom,CapsuleMetrics.insetY)
@@ -329,14 +312,29 @@ struct CapsuleView: View {
       .background(.primary.opacity(0.065), in: Circle())
   }
 }
+private struct CapsuleLineInk: ViewModifier {
+  let size: CGFloat, enabled: Bool
+  @Environment(\.colorSchemeContrast) private var contrast
+  func body(content:Content) -> some View {
+    content.mask {
+      GeometryReader { g in
+        if enabled, contrast != .increased, g.size.height > CapsuleMetrics.oneLine(size) + 6 {
+          LinearGradient(stops:[.init(color:.black.opacity(0.66),location:0),.init(color:.black.opacity(0.76),location:0.42),
+                                .init(color:.black,location:0.58)],startPoint:.top,endPoint:.bottom)
+        } else {Color.black}
+      }
+    }
+  }
+}
 private struct PanelWords: View {
   @ObservedObject var d: Desk
   let id: UUID, original: String?
   var available=true
   var body: some View {
     PassageEditor(id:id,value:d.reviewText,label:"悬浮窗正文，可编辑",size:d.options.appearance.typeSize,
-      editable:available && !d.confirming && d.historyDraft == nil,editing:d.panelEditing,compare:original,
+      editable:available && !d.confirming && d.historyDraft == nil,editing:d.panelEditing,bottomAtEntry:original == nil,compare:original,
       begin:{d.editLast(open:false,inPanel:true);return d.panelEditing},change:{if d.panelEditing {d.draft=$0}},save:d.confirmReview,cancel:d.cancelEdit)
+      .modifier(CapsuleLineInk(size:d.options.appearance.typeSize,enabled:!d.panelEditing && original == nil))
       .frame(maxWidth:.infinity,maxHeight:.infinity).help("点按文字修改")
   }
 }
@@ -438,19 +436,25 @@ private struct CapsuleCancel: NSViewRepresentable {
 
 // One set of insets drives both the fitted panel and its SwiftUI content.
 enum CapsuleMetrics {
-  static let insetX: CGFloat = 16, insetY: CGFloat = 9, outer: CGFloat = 3
-  static let header: CGFloat = 26, gap: CGFloat = 6, leading: CGFloat = 3
-  static let dragHeight: CGFloat = 15
+  static let insetX: CGFloat = 16, insetY: CGFloat = 7, outer: CGFloat = 3
+  static let header: CGFloat = 26, gap: CGFloat = 4, leading: CGFloat = 3
+  static let dragHeight: CGFloat = 13
   static let shell = dragHeight + insetY + 2 * outer + header
+  static func oneLine(_ size:CGFloat) -> CGFloat {
+    inkHeight("汉Ag",width:320,font:.systemFont(ofSize:size,weight:.medium))
+  }
   static func transcriptHeight(_ text:String, width:CGFloat, size:CGFloat) -> CGFloat {
-    min(172,max(83,inkHeight(text,width:width,font:.systemFont(ofSize:size,weight:.medium)) + shell + gap + 2))
+    let font=NSFont.systemFont(ofSize:size,weight:.medium)
+    let ink=inkHeight(String(text.prefix(400)),width:width,font:font)
+    let two=inkHeight("汉Ag\n汉Ag",width:320,font:font)
+    return shell + gap + min(two,max(oneLine(size),ink)) + 5
   }
   static func inkHeight(_ text: String, width: CGFloat, font: NSFont) -> CGFloat {
     let p = NSMutableParagraphStyle()
     p.lineSpacing = leading
     return ceil(
       (text as NSString).boundingRect(
-        with: NSSize(width: max(1, width - 2 * (insetX + outer)), height: 1200),
+        with: NSSize(width: max(1, width - 2 * (insetX + outer) - 4), height: 1200),
         options: [.usesLineFragmentOrigin, .usesFontLeading],
         attributes: [.font: font, .paragraphStyle: p]
       ).height)
@@ -566,11 +570,9 @@ final class CapsuleController {
     let replay=desk.capsuleReplay
     let text = preview ? "明天下午开会，请带上合同。" : desk.phase == .result ? desk.reviewText : desk.stable + desk.tail
     let width = max(1,min(area.width - 16,desk.options.appearance.width))
-    let font = NSFont.systemFont(ofSize: desk.options.appearance.typeSize, weight: .medium)
     let display =
       desk.showEdits
       ? ReviewRuns.diff(desk.raw, desk.last).map(\.s).joined() : String(text.suffix(1200))
-    let ink = CapsuleMetrics.inkHeight(display, width: width, font: font)
     // Long permission or device messages may wrap to two lines in a compact panel.
     let titleSpace = max(1, width - 2 * (CapsuleMetrics.insetX + CapsuleMetrics.outer) - 70)
     let noticeHeight = (desk.status as NSString).boundingRect(
@@ -584,7 +586,6 @@ final class CapsuleController {
         + (desk.phase == .notice ? max(0, min(34, ceil(noticeHeight)) - CapsuleMetrics.header) : 0)
       : CapsuleMetrics.transcriptHeight(display,width:width,size:desk.options.appearance.typeSize)
     if let replay, !desk.panelEditing {
-      height=CapsuleMetrics.shell + CapsuleMetrics.gap + min(116,max(32,ink+6))
       if replay.stage == .working {height+=CapsuleMetrics.gap+4}
       else if let note=CapsuleReplayView.detail(replay) {
         height+=CapsuleMetrics.gap+CapsuleMetrics.inkHeight(note,width:width,font:.systemFont(ofSize:12))+2
@@ -592,7 +593,7 @@ final class CapsuleController {
       let count=CapsuleReplayView.choices(desk,replay).count
       if count>0 {height+=CapsuleMetrics.gap+CapsuleReplayView.choicesHeight(count)}
     }
-    if desk.panelEditing { height=max(94,height) }; let size = NSSize(width:width,height:min(height,max(1,area.height-16)))
+    let size = NSSize(width:width,height:min(height,max(1,area.height-16)))
     let placement=desk.options.appearance.position, key=PanelSpace.key(chosen,placement)
     let point=dragAnchor.flatMap { $0.key == key ? $0.value : nil } ?? desk.options.appearance.anchors[key]
     let rect=PanelPlacement.frame(size,in:area,placement:placement,anchor:point)

@@ -26,16 +26,20 @@ struct SpeechPart {
 
 enum SpeechLayout {
   private static let terminal = "。！？.!?…：:；;", commas = "，,、"
-  private static let topic = [
-    "另外，", "另外,", "另一方面", "最后补充", "还有一件事", "再说一个", "接下来说", "换个话题", "再说一下", "至于", "除此之外",
-  ]
+  private static let turn = #"(?:换个话题|说到另一个问题|回到刚才的话题|最后补充一点|还有一件事|(?:另外|另一方面|接下来|除此之外|最后补充)[，,：:])"#
+  private static let item = #"第[一二三四五六七八九十]+(?:点|步|项)[，,、：:]"#
+  private static func startsParagraph(_ head:String, after left:String, level:EditLevel)->Bool {
+    guard level != .literal else {return false}
+    if head.range(of:"^"+turn,options:.regularExpression) != nil {return true}
+    if head.range(of:#"(?i)^(?:on a different note|on another topic|turning to another subject)\b"#,options:.regularExpression) != nil {return true}
+    return head.hasPrefix("第") && head.range(of:"^"+item,options:.regularExpression) != nil
+      && left.suffix(600).range(of:item,options:.regularExpression) != nil
+  }
   static func clauses(_ input: String, level: EditLevel) -> String {
     guard level != .literal else { return input }
     // Use explicit discourse markers, not character counts. A string such as “另外一个” stays intact.
     var s = input
-    let turn = #"(?:另外[，,：:]|另一方面[，,：:]|还有一件事[，,：:]|最后补充[，,：:]|接下来[，,：:]|除此之外[，,：:])"#
-    if ["另外", "另一方面", "还有一件事", "最后补充", "接下来", "除此之外"].contains(where: s.contains) {
-      s = s.replacing(#"([\p{Han}\uE001]{6})(?="# + turn + ")", "$1。")
+    if s.range(of:turn,options:.regularExpression) != nil {
       s = s.replacing(#"(?<=[\p{Han}\uE001])[，,；;][ \t]*(?="# + turn + ")", "。")
       s = s.replacing(#"([。！？])[ \t]*(?="# + turn + ")", "$1\n\n")
     }
@@ -104,12 +108,12 @@ enum SpeechLayout {
     if part.pause >= 0.7 || last.isASCII && first.isASCII, let gap = wordGap?(a, b) {
       return a + gap + b
     }
-    let head = String(b.prefix(20))
+    let head = String(b.prefix(40))
     let tail = String(a.suffix(112))
     let chinese =
       (String(tail.suffix(16)) + String(head.prefix(16))).range(
         of: #"\p{Han}"#, options: .regularExpression) != nil
-    let newTopic = level != .literal && topic.contains(where: head.hasPrefix)
+    let newTopic = startsParagraph(head, after:a, level:level)
     guard part.pause >= 0.7 || newTopic else { return Transcript.join(a, b) }
     let hanging = [
       "因为", "如果", "为了", "比如", "以及", "然后把", "我们在", "前往", "百分之", "也就是", "一共是", "分别是", "我想说", "我的",
@@ -123,7 +127,6 @@ enum SpeechLayout {
     if hanging || dependent || quantity || openLiteral(tail) { return Transcript.join(a, b) }
     let strong = part.pause >= 1.75 || newTopic
     let closed = terminal.contains(last)
-    let breaks = newTopic || (strong && tail.count >= (chinese ? 7 : 22))
     let lastClause = tail.reversed().prefix { !(terminal + commas).contains($0) }.count
     let sentence = strong || lastClause >= (chinese ? 8 : 28)
     let period = chinese ? (["吗", "么", "怎么办"].contains(where: tail.hasSuffix) ? "？" : "。") : "."
@@ -138,7 +141,8 @@ enum SpeechLayout {
         previous += sentence ? period : (chinese ? "，" : ",")
       }
     }
-    return previous + (breaks ? "\n\n" : chinese ? "" : " ") + b
+    // A breath can close a sentence. Only a change of subject or an actual list starts a paragraph.
+    return previous + (newTopic ? "\n\n" : chinese ? "" : " ") + b
   }
 }
 
