@@ -24,12 +24,12 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>24</string>
+	<string>25</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>PhraseFlowReleaseNotes</key>
-	<string>微信里听写后，点「复制」，再按 ⌘V 粘贴。其他应用确认输入后，悬浮窗直接收起。
-首段输入能区分提示文字与正文。长段听写只显示两行，可上翻；换话题或明确列举时才分段。</string>
+	<string>松开右 ⌘ 后，文字直接进入开始听写时的输入框；聊天内容不会自动发送。
+	长段听写只显示两行，可上翻阅读；分段优先依据语意。</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

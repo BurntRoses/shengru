@@ -75,7 +75,6 @@ final class Desk: ObservableObject {
   var copied: Bool { copiedText == copyText }
   private var copyReset: DispatchWorkItem?
   @Published var needsCopy = false
-  private var afterCopy: String?
   @Published var ready = false
   @Published var preparing = true
   @Published private(set) var activeModel: SpeechModel?
@@ -345,7 +344,7 @@ final class Desk: ObservableObject {
   var deliveryHint:String? {
     guard phase == .listen, let target else { return nil }
     if runOptions.reviewFirst {return "先审阅"}
-    guard runOptions.autoInsert, allowInsert, target.canInsertLive, let name=target.appName else {return "定稿可复制"}
+    guard runOptions.autoInsert, allowInsert, target.acceptsLiveDictation, let name=target.appName else {return nil}
     return "→ " + name
   }
   // A click merely to read/select must not make the next dictation wait for an empty save.
@@ -402,7 +401,6 @@ final class Desk: ObservableObject {
     skipDelivery = false
     tag = id
     clearCopyFeedback()
-    afterCopy = nil
     fadeMark?.cancel(); lastMark=nil; liveMark=nil
     runOptions = options
     runTerms = terms.filter(policy.uses)
@@ -597,11 +595,10 @@ final class Desk: ObservableObject {
         guard self.lastID==revision,self.last==text else {return}; self.presentResult(receipt,id:id)
       };return
     }
-    afterCopy = out.afterCopy
     status = out.title
     icon = out.symbol
     needsCopy = out.keep
-    insertedEarlier = !out.keep
+    insertedEarlier = out.confirmed
     delivered = out.passage.flatMap { passage in lastID.map { ($0, passage) } }
     showEdits = false
     phase = out.keep ? .result : .idle
@@ -669,7 +666,7 @@ final class Desk: ObservableObject {
       readingChoices=readingChoices.filter{$0.applying(to:text) != nil};readingEdit=nil;draft=text;last=text;stable=text;tail="";showEdits=false
       onChange?()
       if let to { confirming=true; to.insertReviewed(text) { [weak self] out in self?.confirming=false;self?.presentResult(out,id:UUID()) } }
-      else {presentResult(entry.target?.copyFallback ?? .available,id:UUID())}
+      else {presentResult(entry.target?.retainedOutcome ?? .available,id:UUID())}
     } else {
       // Release the panel's keyboard focus before attempting the original editor. Only a verified
       // insertion receipt may replace text; changing an older history entry never writes outside the app.
@@ -822,9 +819,6 @@ final class Desk: ObservableObject {
     }
     clearCopyFeedback()
     copiedText = text
-    if phase == .result, !editing, !awaitingReview, let afterCopy {
-      status=afterCopy; icon="checkmark"; onChange?(); hide(in:max(2,options.appearance.hideDelay))
-    }
     // Copying is orthogonal to recording and review: never commit a draft, insert it or dismiss the review.
     let reset = DispatchWorkItem { [weak self] in self?.copiedText = nil }
     copyReset = reset
